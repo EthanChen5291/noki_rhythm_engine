@@ -11,11 +11,11 @@ SONG_NAMES = [
     "miley.mp3",
     "ICARIUS.mp3",
     "Fluffing A Duck.mp3",
-    "Reel.mp3",
     "Megalovania.mp3",
     "Malo Kart.mp3",
-    "StoryOfMoon.wav",
+    "tidalwave.mp3",
     "hustle.mp3",
+    "what is love?.mp3"
 ]
 
 WORD_BANK_1 = ["cat", "test", "me", "rhythm", "beat", "fish", "moon", "derp", "noki", "yeah"]
@@ -69,6 +69,11 @@ def main():
         # work on file system, saving files to cloud (so the files are there for that user every time, etc)
         #integrate font
         # doesn't understand climax sections well
+
+        # ===== BUGS
+        # doesn't wait until last char is finished in dual section before transitioning back
+        # sometimes has ghost letters (skips on its own) (only bounce mode)
+        # sometimes doesn't have grace period when starting dual mode
 
         game = Game(level=level, screen=screen, clock=clock)
         game.run()
