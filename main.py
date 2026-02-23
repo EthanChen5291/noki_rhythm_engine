@@ -75,6 +75,9 @@ def main():
         # sometimes has ghost letters (skips on its own) (only bounce mode). 
         # sometimes doesn't have grace period when starting dual mode
 
+        # Ariana Grande - Problem ft. Iggy Azalea 
+        # words synced to song? is word detection from audio possible?
+
         game = Game(level=level, screen=screen, clock=clock)
         game.run()
 

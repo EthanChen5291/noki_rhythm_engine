@@ -775,19 +775,18 @@ class Game:
         events = pygame.event.get()
         mouse_pos = pygame.mouse.get_pos()
         mouse_clicked = False
+        pause_requested = False
         for event in events:
             if event.type == pygame.QUIT:
                 self.running = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                self._enter_pause()
-                return
+                pause_requested = True
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_clicked = True
 
         self.pause_button.check_hover(mouse_pos)
         if self.pause_button.check_click(mouse_pos, mouse_clicked):
-            self._enter_pause()
-            return
+            pause_requested = True
 
         self.input.update(events=events)
         
@@ -871,6 +870,11 @@ class Game:
 
         # pause button
         self.pause_button.draw(self.screen, time.time())
+
+        # Enter pause after all rendering so the snapshot includes the full frame
+        if pause_requested:
+            self._enter_pause()
+            return
 
 
     def get_next_word(self) -> str | None:
@@ -1270,7 +1274,15 @@ class Game:
                 if self.bounce_active and not self.dual_side_active:
                     if time_until_hit < 0 and not event.hit:
                         continue
-                    note_from_left = self.bounce_reversed
+                    # Compute the bounce direction at this note's timestamp
+                    # so notes keep their original approach direction after a flip
+                    note_reversed = False
+                    for bevt in self.bounce_events:
+                        if bevt.time <= event.timestamp - self.rhythm.lead_in:
+                            note_reversed = not note_reversed
+                        else:
+                            break
+                    note_from_left = note_reversed
 
                 if note_from_left:
                     marker_x = hit_marker_x - (time_until_hit * self.scroll_speed)
