@@ -1,4 +1,4 @@
-# 🐱 Noki (v1.0)
+# Noki (v1.0)
 ### *A High-Fidelity Rhythm-Typing Engine*
 
 **Noki** is a procedural rhythm engine designed to bridge the gap between mechanical typing and the expressive "flow state" of modern rhythm games. By leveraging deterministic audio analysis and music theory, Noki transforms any audio file and word bank into a playable, musically-synced keyboard level.
