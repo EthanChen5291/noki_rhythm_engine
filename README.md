@@ -1,6 +1,6 @@
 # noki
 
-![alt text](assets/images/nokiv1.png)
+![alt text](assets/images/noki_thumbnail.png)
 
 Noki's mission is to create an algorithm that injects as much musicality and proven design patterns into ANY "list of words" and ANY song/sound as possible -- mixing grid alignment with a controlled random/humanized feel to create a playable custom rhythmic level that takes "typing" up another key (musically and keyboard-ly).
 
