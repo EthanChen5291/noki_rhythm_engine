@@ -3,7 +3,7 @@
 
 **Noki** is a procedural rhythm engine designed to bridge the gap between mechanical typing and the expressive "flow state" of modern rhythm games. By leveraging deterministic audio analysis and music theory, Noki transforms any audio file and word bank into a playable, musically-synced keyboard level.
 
-![noki](assets/images/noki_preview.png)
+![noki](assets/images/noki_thumbnail.png)
 
 ---
 
