@@ -1,56 +1,98 @@
 # noki
 
-![alt text](assets/images/nokiv1.png)
+![Noki Preview](assets/images/noki_preview.png)
 
-Noki's mission is to create an algorithm that injects as much musicality and proven design patterns into ANY "list of words" and ANY song/sound as possible -- mixing grid alignment with a controlled random/humanized feel to create a playable custom rhythmic level that takes "typing" up another key (musically and keyboard-ly).
+## What is this?
 
-Noki uses deterministic techniques, music theory, and audio analysis. As developers, we take heavy inspiration from modern rhythm games' systems, trends, and (albeit handmade) levels and want to imitate their impact with generated beatmaps from top to bottom. 
+**noki** is a rhythm game engine that generates playable typing levels from:
+- any audio file
+- any list of words
 
-LIMITATION: may require iteration and playtesting to truly reach the level of hand-crafted levels. 
+Instead of hand-designing levels, the system analyzes the music and constructs a beatmap automatically.
 
-### ==== FEATURES ==== ###
+---
 
-- Allows user customizability in designing levels/music (custom word bank per level, custom music)
-- Algorithm that maps words to bpm in a ergonomically satisfying way
-- 3-5 default progression levels, each level with a specific word bank (music finished) to demonstrate 
-- Journey, Classic, Master modes. Visualizer: (counted as checkmark on level (Journey accomplished), star (Classic accomplished), and cat crown (Master mode accomplished))
+## Running locally
 
-# FAR FUTURE
- add features to:
- 1. add X words to word bank by finding similar words in DIFFICULTY and CHARS_USED
- 2. add X words to word bank by finding similar words in DIFFICULTY but covering the less covered chars
- 3. cut X words from word bank that are cover chars that are too similar 
+Clone the repo:
+`git clone https://github.com/EthanChen5291/noki_rhythm_engine.git`
 
-# ART
-style: constant brush thickness (no pressure sensor), simplistic with smooth animation 
-- art ref: check out friday night funkin
+Enter the project:
+`cd noki_rhythm_engine`
 
-- cat shaking head animation (loop)
+Install dependencies:
+`pip install -r requirements.txt`
 
-THREE cat emote animations for CORRECT notes (happy) 
-      -> VERY QUICK -> should return back to cat shaking head
+Run the game:
+`python main.py`
 
- THREE cat emote animations for INCORRECT notes (sad)
-      -> VERY QUICK -> should return back to cat shaking head
+---
 
- speakers booming animation (loop)
- floating music notes coming out of speakers
+## Why I built this
 
-# 6 BACKGROUNDS, one for each song (very simple ones!)
+Most rhythm games rely on handcrafted maps. They feel great, but they don’t scale.
 
-# MUSIC (undecided)
+I wanted to explore:
+> how close you can get to that “handmade feel” using deterministic systems + audio analysis
 
-LEVELS:
-- tutorial (bpm=120, song_secs:) yes_ending
-- heartme2 (bpm = 120, ) yes_ending
-- moonlitforest (bpm = 110) yes_ending
-- finalmeow (bpm=180, ) yes_ending
-- RAMJAM (bpm=120) yes_ending
-- BAMSAM (bpm=170) yes_ending
-- thatstrange.. (bpm=150) 
-- goofuhdur (bpm=120, )
+The focus is on:
+- timing that actually matches the music
+- input patterns that feel natural to type
+- controlled randomness so levels don’t feel robotic
 
-PASSIVE:
-- heyjazz (title screen) bpm=95 no_ending
-- heyjazz (level-play screen) bpm=95 no_ending
-- heyjazz (settings screen) bpm=95 no_ending
+---
+
+## What it does
+
+- analyzes audio to estimate BPM, intensity, and structure
+- generates note timing aligned to beats and sub-beats
+- maps words into input sequences that are playable and ergonomic
+- adjusts scroll speed and density based on musical intensity
+
+You can drop in your own:
+- audio file
+- word bank
+
+and get a fully playable level.
+
+---
+
+## Key systems
+
+**Audio analysis**
+- BPM detection + normalization
+- sub-beat intensity calculation
+- section-based intensity tracking
+
+**Beatmap generation**
+- deterministic timing with controlled variation
+- intensity-driven note density
+- pattern shaping based on rhythm structure
+
+**Gameplay**
+- typing-based input mapped to rhythm
+- dynamic scroll speed
+- real-time feedback and animations
+
+---
+
+## Tech
+
+- Python  
+- Pygame  
+- NumPy / audio processing tools  
+
+---
+
+## Limitations
+
+- generated maps are not always as polished as handcrafted ones  
+- audio analysis can struggle with complex or messy tracks  
+
+---
+
+## Future work
+
+- better word selection (difficulty + keyboard coverage)  
+- improved phrase/melody alignment  
+- smarter difficulty scaling  
