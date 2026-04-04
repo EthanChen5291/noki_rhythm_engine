@@ -1,6 +1,6 @@
 # Noki
 
-![Noki Preview](assets/images/noki_preview.png)
+<img src="assets/images/noki_preview.png" alt="Noki Preview" width="400">
 
 ## What is this?
 
@@ -11,6 +11,59 @@
 Instead of hand-designing levels, the system analyzes the music and constructs a beatmap automatically.
 
 ---
+
+### Prerequisites
+Before running noki, ensure you have the following installed:
+
+- Python 3.8+
+- pip (Python package manager)
+- FFmpeg (Required for certain audio processing libraries like librosa or pydub)
+
+Setup Steps:
+
+1. Clone the repository
+
+```bash
+git clone https://github.com/EthanChen5291/noki_rhythm_engine.git
+cd noki_rhythm_engine
+```
+
+2. Create a Virtual Environment (Recommended)
+
+```bash
+python -m venv venv
+```
+
+
+### Activate it:
+
+
+macOS / Linux
+
+```bash
+source venv/bin/activate`
+```
+
+Windows
+
+```bash
+venv\Scripts\activate
+```
+
+
+3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+
+4. Run the Game
+
+```bash
+python main.py
+```
+
 
 ## Running locally
 
@@ -30,14 +83,14 @@ Run the game:
 
 ## Why I built this
 
-Most rhythm games rely on handcrafted maps. They feel great, but they don’t scale.
+Most rhythm games rely on handcrafted maps. This leads to limitations in the variety of songs that can be played.
 
 I wanted to explore:
 > how close you can get to that “handmade feel” using deterministic systems + audio analysis
 
 The focus is on:
-- timing that actually matches the music
-- input patterns that feel natural to type
+- timing that matches the music
+- input patterns that feel natural
 - controlled randomness so levels don’t feel robotic
 
 ---
