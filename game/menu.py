@@ -10,6 +10,11 @@ import threading
 import json
 import re
 
+_FONT = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "assets", "images", "fonts", "tacobae-font", "Tacobae-pge2K.otf",
+)
+
 
 # ─── Audio duration helper ───────────────────────────────────────────────────
 
@@ -380,6 +385,62 @@ class DifficultySelector:
         screen.set_clip(old_clip)
 
 
+# ─── Image button (hover scale + click shrink→bounce) ────────────────────────
+
+_EXIT_IMG = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "assets", "images", "exitbutton.png",
+)
+
+class ImageButton:
+    """Clickable image that scales on hover and bounces on click."""
+    _HOVER_SCALE  = 1.12
+    _CLICK_SHRINK = 0.75
+    _CLICK_BOUNCE = 1.18
+    _LERP_NORMAL  = 0.12
+    _LERP_FAST    = 0.25
+
+    def __init__(self, cx: int, cy: int, size: int, image_path: str):
+        raw         = pygame.image.load(image_path).convert_alpha()
+        self._base  = raw
+        self._size  = size
+        self.cx     = cx
+        self.cy     = cy
+        self._scale       = 1.0
+        self._click_phase = None   # None | "shrink" | "bounce"
+        self.rect = pygame.Rect(cx - size // 2, cy - size // 2, size, size)
+
+    def _hovered(self, mouse_pos) -> bool:
+        half = max(1, int(self._size * self._scale)) // 2
+        return pygame.Rect(self.cx - half, self.cy - half, half * 2, half * 2).collidepoint(mouse_pos)
+
+    def update(self, mouse_pos, mouse_clicked) -> bool:
+        """Returns True on the frame the click fires."""
+        hovered = self._hovered(mouse_pos)
+        if mouse_clicked and hovered and self._click_phase is None:
+            self._click_phase = "shrink"
+
+        if self._click_phase == "shrink":
+            self._scale += (self._CLICK_SHRINK - self._scale) * self._LERP_FAST
+            if abs(self._scale - self._CLICK_SHRINK) < 0.025:
+                self._click_phase = "bounce"
+        elif self._click_phase == "bounce":
+            self._scale += (self._CLICK_BOUNCE - self._scale) * self._LERP_FAST
+            if abs(self._scale - self._CLICK_BOUNCE) < 0.025:
+                self._click_phase = None
+                self._scale = self._HOVER_SCALE if hovered else 1.0
+                return True
+        else:
+            target = self._HOVER_SCALE if hovered else 1.0
+            self._scale += (target - self._scale) * self._LERP_NORMAL
+        return False
+
+    def draw(self, screen, _current_time=None):
+        disp = max(1, int(self._size * self._scale))
+        surf = pygame.transform.smoothscale(self._base, (disp, disp))
+        screen.blit(surf, surf.get_rect(center=(self.cx, self.cy)))
+
+
 # ─── Title screen ────────────────────────────────────────────────────────────
 
 class TitleScreen:
@@ -392,35 +453,45 @@ class TitleScreen:
     _LERP_NORMAL   = 0.10
     _LERP_FAST     = 0.22
 
+    # beat-pulse constants  (90 BPM)
+    _BPM           = 90.0
+    _BEAT_PEAK     = 1.14   # title scale on the beat
+    _BTN_BEAT_PEAK = 1.20   # button scale boost on the beat
+    _BEAT_LERP     = 0.18   # how fast the scale chases the target each frame
+
     def __init__(self, screen):
         self.screen = screen
         sw, sh = screen.get_size()
 
-        # ── Title image (35 % smaller than the 50 % version → 32.5 % of sw) ──
+        # ── Title image ──────────────────────────────────────────────────
         raw_title = pygame.image.load(
             os.path.join(self._ASSETS, "noki_maintitle.png")
         ).convert_alpha()
         target_w      = int(sw * 0.325)
         target_h      = int(raw_title.get_height() * target_w / raw_title.get_width())
-        self.title_img = pygame.transform.smoothscale(raw_title, (target_w, target_h))
-        # moved down: centre title slightly below the screen midpoint
-        self.title_cx  = sw // 2
-        self.title_cy_base = sh // 2 - target_h // 2 + 20
+        self.title_img     = raw_title          # keep original full-res for scaling
+        self._title_base_w = target_w
+        self._title_base_h = target_h
+        self.title_cx      = sw // 2
+        self.title_cy      = sh // 2 - target_h // 2 + 20
 
-        # ── Play button image ─────────────────────────────────────────────────
+        # beat-pulse scale for title
+        self._title_scale        = 1.0
+        self._title_scale_target = 1.0
+
+        # ── Play button image ─────────────────────────────────────────────
         raw_btn = pygame.image.load(
             os.path.join(self._ASSETS, "playbutton.png")
         ).convert_alpha()
-        btn_size = int(sh * 0.10)          # base display size
-        self._btn_base = pygame.transform.smoothscale(raw_btn, (btn_size, btn_size))
+        btn_size = int(sh * 0.10 * 1.20)       # 20 % larger than before
+        self._btn_base = raw_btn                # keep original for smooth scaling
         self._btn_size = btn_size
-        # position: below the title, shifted down a bit further
         self.btn_cx = sw // 2
         self.btn_cy = sh // 2 + target_h // 2 + 60
 
-        # animation state
-        self._scale        = 1.0
-        self._click_phase  = None   # None | "shrink" | "bounce"
+        # click animation state
+        self._scale       = 1.0
+        self._click_phase = None   # None | "shrink" | "bounce"
 
         # rect used by MenuManager as the transition origin
         self.play_button_rect = pygame.Rect(
@@ -429,18 +500,22 @@ class TitleScreen:
             btn_size, btn_size,
         )
 
+        # beat tracking
+        self._beat_period  = 60.0 / self._BPM   # seconds per beat
+        self._last_beat    = -1                  # which beat index last fired
+
     def _btn_hovered(self, mouse_pos) -> bool:
         half = int(self._btn_size * self._scale) // 2
         r = pygame.Rect(self.btn_cx - half, self.btn_cy - half, half * 2, half * 2)
         return r.collidepoint(mouse_pos)
 
-    def update(self, mouse_pos, mouse_clicked, _current_time):
+    def update(self, mouse_pos, mouse_clicked, current_time):
         hovered = self._btn_hovered(mouse_pos)
 
         if mouse_clicked and hovered and self._click_phase is None:
             self._click_phase = "shrink"
 
-        # drive scale state machine
+        # ── click animation ──────────────────────────────────────────────
         if self._click_phase == "shrink":
             target = self._CLICK_SHRINK
             self._scale += (target - self._scale) * self._LERP_FAST
@@ -456,20 +531,31 @@ class TitleScreen:
                 return "play"
 
         else:
-            target = self._HOVER_SCALE if hovered else 1.0
-            self._scale += (target - self._scale) * self._LERP_NORMAL
+            # ── beat pulse ────────────────────────────────────────────────
+            beat_idx = int(current_time / self._beat_period)
+            if beat_idx != self._last_beat:
+                self._last_beat          = beat_idx
+                self._title_scale_target = self._BEAT_PEAK
+                # only kick button beat when not in hover/click animation
+                if not hovered:
+                    self._scale = 1.0 + (self._BTN_BEAT_PEAK - 1.0)
+
+            # title scale lerps back to 1.0
+            self._title_scale_target += (1.0 - self._title_scale_target) * self._BEAT_LERP
+            self._title_scale        += (self._title_scale_target - self._title_scale) * self._BEAT_LERP
+
+            # button scale lerps toward hover/rest
+            base_target = self._HOVER_SCALE if hovered else 1.0
+            self._scale += (base_target - self._scale) * self._LERP_NORMAL
 
         return None
 
-    def draw(self, current_time):
-        sw = self.screen.get_width()
-
-        # floating title
-        y_offset = 8 * math.sin(current_time * 2)
-        self.screen.blit(
-            self.title_img,
-            self.title_img.get_rect(center=(self.title_cx, self.title_cy_base + y_offset)),
-        )
+    def draw(self, _current_time):
+        # ── beat-scaled title ────────────────────────────────────────────
+        tw = max(1, int(self._title_base_w * self._title_scale))
+        th = max(1, int(self._title_base_h * self._title_scale))
+        title_surf = pygame.transform.smoothscale(self.title_img, (tw, th))
+        self.screen.blit(title_surf, title_surf.get_rect(center=(self.title_cx, self.title_cy)))
 
         # scaled play button
         disp_size = max(1, int(self._btn_size * self._scale))
@@ -488,17 +574,26 @@ class LevelSelect:
         self.song_names = song_names
         sw, sh = screen.get_size()
 
-        self.header_font  = pygame.font.Font(None, 60)
-        self.button_font  = pygame.font.Font(None, 42)
-        self.back_font    = pygame.font.Font(None, 52)
-        self.diff_font    = pygame.font.Font(None, 36)
-        self.upload_font1 = pygame.font.Font(None, 96)
-        self.upload_font2 = pygame.font.Font(None, 78)
+        self.header_font  = pygame.font.Font(_FONT, 60)
+        self.button_font  = pygame.font.Font(_FONT, 42)
+        self.diff_font    = pygame.font.Font(_FONT, 36)
+        self.upload_font1 = pygame.font.Font(_FONT, 96)
+        self.upload_font2 = pygame.font.Font(_FONT, 78)
 
         self.scroll_offset  = 0
         self.button_height  = 56
-        self.button_spacing = 14
+        self.button_spacing = 22      # more breathing room between rows
         self.list_top       = 120
+
+        # ── Scrollbar geometry (right edge of right panel) ───────────────
+        self._sb_w      = 6
+        self._sb_margin = 12
+        self._sb_x      = sw - self._sb_margin - self._sb_w
+        self._sb_y      = self.list_top
+        self._sb_h      = sh - self.list_top - 20
+        self._sb_drag   = False
+        self._sb_drag_start_y      = 0
+        self._sb_drag_start_offset = 0
 
         # ── Upload zone (left 35%) ───────────────────────────────────────
         div_x = int(sw * self._LEFT_FRAC)
@@ -520,38 +615,35 @@ class LevelSelect:
         self._upload_line2_y_off = self._upload_line1_y_off + th1 // 2 + gap + th2 // 2
 
         # ── Song list (right 65%) ────────────────────────────────────────
-        right_start = div_x
-        right_cx    = right_start + (sw - right_start) // 2
-
+        # btn_x anchored close to the divider so names get maximum width.
+        # diff_cx pinned near the scrollbar so there's always a fixed right margin.
         diff_max_lw = max(self.diff_font.size(l)[0] for l in DifficultySelector.LABELS)
-        diff_half_w = diff_max_lw // 2 + 30
+        diff_half_w = diff_max_lw // 2 + 32   # half-label + arrow zone
 
-        self.btn_w = min(300, (sw - right_start) // 2 - diff_half_w - 60)
-        self.btn_x = right_cx - self.btn_w // 2 - diff_half_w - 30
-        self.diff_cx = self.btn_x + self.btn_w + 60 + diff_half_w
+        self.btn_x   = div_x + 20
+        self.diff_cx = self._sb_x - self._sb_margin - diff_half_w
+        self.btn_w   = self.diff_cx - diff_half_w - 50 - self.btn_x
+
+        # store full (un-truncated) display names for marquee rendering
+        self._full_names: list[str] = []
 
         self.level_buttons:        list[Button]             = []
         self.difficulty_selectors: list[DifficultySelector] = []
 
         for i, name in enumerate(song_names):
-            raw = os.path.splitext(name)[0]
-            display = raw
-            while self.button_font.size(display)[0] > self.btn_w - 16 and len(display) > 4:
-                display = display[:-1]
-            if display != raw:
-                display = display[:-2] + "…"
+            display = os.path.splitext(name)[0]
+            self._full_names.append(display)
             btn_y = self.list_top + i * (self.button_height + self.button_spacing)
             self.level_buttons.append(Button(
-                (self.btn_x, btn_y, self.btn_w, self.button_height), display, self.button_font
+                (self.btn_x, btn_y, self.btn_w, self.button_height),
+                display, self.button_font,
             ))
             self.difficulty_selectors.append(
                 DifficultySelector(self.diff_cx, btn_y + self.button_height // 2, self.diff_font)
             )
 
-        self.back_button = Button(
-            (30, 30, 120, 50), "BACK", self.back_font,
-            base_color=(180, 180, 180), hover_color=(255, 255, 255),
-        )
+        _btn_sz = 52
+        self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
         total = len(song_names) * (self.button_height + self.button_spacing)
         self.max_scroll = max(0, total - (sh - self.list_top - 40))
 
@@ -559,15 +651,53 @@ class LevelSelect:
         if event.type == pygame.MOUSEWHEEL:
             self.scroll_offset -= event.y * 30
             self.scroll_offset  = max(0, min(self.scroll_offset, self.max_scroll))
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._sb_drag = False
+        elif event.type == pygame.MOUSEMOTION and self._sb_drag:
+            dy = event.pos[1] - self._sb_drag_start_y
+            if self._sb_h > 0 and self.max_scroll > 0:
+                self.scroll_offset = self._sb_drag_start_offset + int(
+                    dy * self.max_scroll / self._sb_h
+                )
+            self.scroll_offset = max(0, min(self.scroll_offset, self.max_scroll))
+
+    def _sb_thumb_rect(self) -> pygame.Rect | None:
+        """Return the scrollbar thumb rect, or None if scrollbar isn't needed."""
+        if self.max_scroll <= 0:
+            return None
+        total_rows = len(self.level_buttons)
+        if total_rows == 0:
+            return None
+        viewport_h = self._sb_h
+        total_h    = total_rows * (self.button_height + self.button_spacing)
+        thumb_h    = max(24, int(viewport_h * viewport_h / total_h))
+        thumb_y    = self._sb_y + int(
+            (viewport_h - thumb_h) * self.scroll_offset / self.max_scroll
+        )
+        return pygame.Rect(self._sb_x, thumb_y, self._sb_w, thumb_h)
 
     def update(self, mouse_pos, mouse_clicked, _current_time):
-        self.back_button.check_hover(mouse_pos)
-        if self.back_button.check_click(mouse_pos, mouse_clicked):
+        if self.back_button.update(mouse_pos, mouse_clicked):
             return "back", -1
 
         self._upload_hovered = self.upload_rect.collidepoint(mouse_pos)
         if mouse_clicked and self._upload_hovered:
             return "upload", -1
+
+        # Scrollbar click / drag start
+        if mouse_clicked and self.max_scroll > 0:
+            thumb = self._sb_thumb_rect()
+            if thumb and thumb.collidepoint(mouse_pos):
+                self._sb_drag = True
+                self._sb_drag_start_y      = mouse_pos[1]
+                self._sb_drag_start_offset = self.scroll_offset
+            else:
+                track = pygame.Rect(self._sb_x, self._sb_y, self._sb_w, self._sb_h)
+                if track.collidepoint(mouse_pos):
+                    # Click on track: jump
+                    t = (mouse_pos[1] - self._sb_y) / self._sb_h
+                    self.scroll_offset = int(t * self.max_scroll)
+                    self.scroll_offset = max(0, min(self.scroll_offset, self.max_scroll))
 
         adj = (mouse_pos[0], mouse_pos[1] + self.scroll_offset)
         for i, btn in enumerate(self.level_buttons):
@@ -621,22 +751,68 @@ class LevelSelect:
         self.screen.blit(hdr, hdr.get_rect(center=(right_cx, 68)))
 
         # Scrollable list
-        clip_rect = pygame.Rect(div_x + 1, self.list_top - 10, sw, sh - self.list_top)
-        self.screen.set_clip(clip_rect)
+        scroll_clip = pygame.Rect(div_x + 1, self.list_top - 10, sw, sh - self.list_top)
+        self.screen.set_clip(scroll_clip)
+
+        _SCROLL_SPEED = 48   # px / sec  — how fast the marquee moves
+        _PAUSE        = 2.0  # sec pause at left edge before scrolling
 
         for i, btn in enumerate(self.level_buttons):
-            vis_y   = btn.rect.y - self.scroll_offset
-            shifted = Button(
-                (btn.rect.x, vis_y, btn.rect.w, btn.rect.h),
-                btn.text, btn.font, btn.base_color, btn.hover_color,
-            )
-            shifted.is_hovered = btn.is_hovered
-            shifted._scale     = btn._scale
-            shifted.draw(self.screen, current_time)
+            vis_y = btn.rect.y - self.scroll_offset
+
+            # ── hover glow ──────────────────────────────────────────────
+            btn._scale += (btn._target_scale - btn._scale) * 0.18
+            if btn.is_hovered:
+                glow = pygame.Rect(btn.rect.x, vis_y, btn.rect.w, btn.rect.h).inflate(8, 8)
+                pygame.draw.rect(self.screen, (80, 80, 100), glow, 2, border_radius=8)
+
+            # ── marquee text ─────────────────────────────────────────────
+            color     = btn.hover_color if btn.is_hovered else btn.base_color
+            text_surf = btn.font.render(self._full_names[i], True, color)
+            tw        = text_surf.get_width()
+            pad       = 10
+            clip_w    = btn.rect.w - pad        # available width for text
+            text_y    = vis_y + (btn.rect.h - text_surf.get_height()) // 2
+
+            if tw > clip_w:
+                max_off  = tw - clip_w
+                cycle    = _PAUSE + max_off / _SCROLL_SPEED + _PAUSE
+                t        = (current_time + i * 0.4) % cycle  # stagger per row
+                if t < _PAUSE:
+                    x_off = 0
+                elif t < _PAUSE + max_off / _SCROLL_SPEED:
+                    x_off = int((t - _PAUSE) * _SCROLL_SPEED)
+                else:
+                    x_off = max_off
+                draw_x = btn.rect.x + pad - x_off
+            else:
+                draw_x = btn.rect.x + (btn.rect.w - tw) // 2
+
+            # clip text to its own column (inside scroll_clip)
+            text_clip = pygame.Rect(btn.rect.x + pad, vis_y, clip_w, btn.rect.h)
+            old_clip  = self.screen.get_clip()
+            self.screen.set_clip(text_clip.clip(old_clip))
+            self.screen.blit(text_surf, (draw_x, text_y))
+            self.screen.set_clip(old_clip)
+
             self.difficulty_selectors[i].draw(self.screen, current_time,
                                                y_offset=self.scroll_offset)
 
         self.screen.set_clip(None)
+
+        # ── Scrollbar ────────────────────────────────────────────────────
+        if self.max_scroll > 0:
+            # track
+            pygame.draw.rect(
+                self.screen, (45, 45, 55),
+                (self._sb_x, self._sb_y, self._sb_w, self._sb_h),
+                border_radius=3,
+            )
+            # thumb
+            thumb = self._sb_thumb_rect()
+            if thumb:
+                thumb_color = (160, 160, 185) if self._sb_drag else (110, 110, 135)
+                pygame.draw.rect(self.screen, thumb_color, thumb, border_radius=3)
 
 
 # ─── File upload screen ───────────────────────────────────────────────────────
@@ -658,12 +834,11 @@ class FileUploadScreen:
         sw, sh = screen.get_size()
         cy = sh // 2
 
-        title_font  = pygame.font.Font(None, 72)
-        label_font  = pygame.font.Font(None, 32)
-        input_font  = pygame.font.Font(None, 36)
-        btn_font    = pygame.font.Font(None, 48)
-        back_font   = pygame.font.Font(None, 52)
-        status_font = pygame.font.Font(None, 30)
+        title_font  = pygame.font.Font(_FONT, 72)
+        label_font  = pygame.font.Font(_FONT, 32)
+        input_font  = pygame.font.Font(_FONT, 36)
+        btn_font    = pygame.font.Font(_FONT, 48)
+        status_font = pygame.font.Font(_FONT, 30)
 
         self.title_font  = title_font
         self.label_font  = label_font
@@ -674,10 +849,8 @@ class FileUploadScreen:
         self.status_color   = (160, 160, 160)
 
         # buttons
-        self.back_button = Button(
-            (30, 30, 120, 50), "BACK", back_font,
-            base_color=(180, 180, 180), hover_color=(255, 255, 255),
-        )
+        _btn_sz = 52
+        self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
         self.browse_button = Button(
             (sw // 2 - 160, cy - 160, 320, 54), "Browse Files…", btn_font,
             base_color=(140, 180, 255), hover_color=(200, 225, 255),
@@ -738,8 +911,7 @@ class FileUploadScreen:
         self.input_artist.handle_events(events)
 
         # back
-        self.back_button.check_hover(mouse_pos)
-        if self.back_button.check_click(mouse_pos, mouse_clicked):
+        if self.back_button.update(mouse_pos, mouse_clicked):
             return "back", None, None
 
         # ── while fetching ───────────────────────────────────────────────
@@ -800,7 +972,7 @@ class FileUploadScreen:
             if self._spinner_t >= 0.08:
                 self._spinner_t = 0
                 self._spinner_idx = (self._spinner_idx + 1) % len(self._SPINNER)
-            spin_font = pygame.font.Font(None, 52)
+            spin_font = pygame.font.Font(_FONT, 52)
             spin_surf = spin_font.render(
                 f"Fetching lyrics…  {self._SPINNER[self._spinner_idx]}", True, (180, 180, 220)
             )
@@ -821,7 +993,7 @@ class FileUploadScreen:
 
         # hint
         if not (self.input_title.text or self.input_artist.text):
-            hint_font = pygame.font.Font(None, 26)
+            hint_font = pygame.font.Font(_FONT, 26)
             hint = hint_font.render(
                 "Leave blank to use a built-in word set.", True, (70, 70, 90)
             )
@@ -838,11 +1010,12 @@ class FileUploadScreen:
 class MenuManager:
     _PETAL_COUNT = 55
 
-    def __init__(self, screen, clock, song_names, start_state="title"):
+    def __init__(self, screen, clock, song_names, start_state="title", music=None):
         self.screen     = screen
         self.clock      = clock
         self.song_names = song_names
         self.state      = start_state
+        self._music     = music   # MusicManager | None
 
         self.title_screen       = TitleScreen(screen)
         self.level_select       = LevelSelect(screen, song_names)
@@ -857,6 +1030,9 @@ class MenuManager:
 
         sw, sh = screen.get_size()
         self._petals = [Petal(sw, sh, randomize_y=True) for _ in range(self._PETAL_COUNT)]
+
+        # 3-2-1 countdown font  (20 % smaller than 220 → 176)
+        self._countdown_font = pygame.font.Font(_FONT, 176)
 
         # per-song word banks (filename → word list)
         self.song_word_banks: dict[str, list[str]] = _load_word_banks()
@@ -882,17 +1058,63 @@ class MenuManager:
                     self.level_select.handle_scroll(event)
                 events.append(event)
 
+            dt = self.clock.tick(60) / 1000.0
+
+            if self._music:
+                self._music.update(dt)
+
             self.screen.fill((0, 0, 0))
-            for petal in self._petals:
-                petal.update()
-                petal.draw(self.screen)
+
+            _title_ready = (self._music is None) or self._music.title_ready
+
+            if _title_ready:
+                for petal in self._petals:
+                    petal.update()
+                    petal.draw(self.screen)
+            else:
+                # ── 3-2-1 countdown during 321.wav ──────────────────────────
+                # 180 BPM → beat every 1/3 s. Digits: "3" beat 0, "2" beat 1, "1" beat 2
+                # Each digit lerps in (scale 0→1) over half a beat, then lerps out
+                # (scale 1→0) over the second half of the beat.
+                _elapsed = self._music.intro_elapsed if self._music else 0.0
+                _beat_dur = 60.0 / 180.0          # 0.333 s
+                _beat_idx = int(_elapsed / _beat_dur)
+                _beat_t   = (_elapsed % _beat_dur) / _beat_dur   # 0→1 within beat
+
+                if _beat_idx in (0, 1, 2):
+                    _digit = str(3 - _beat_idx)
+                    # timing: in=15%, hold=70%, out=15% of the beat
+                    _IN   = 0.15
+                    _OUT  = 0.15
+                    if _beat_t < _IN:
+                        # lerp in fast with acceleration (ease-in cubic)
+                        _p  = _beat_t / _IN
+                        _sc = _p ** 3
+                    elif _beat_t < 1.0 - _OUT:
+                        # hold at full size
+                        _sc = 1.0
+                    else:
+                        # lerp out fast with acceleration (ease-in cubic)
+                        _p  = (_beat_t - (1.0 - _OUT)) / _OUT
+                        _sc = 1.0 - _p ** 3
+                    _sc = max(0.01, _sc)
+                    _surf = self._countdown_font.render(_digit, True, (255, 255, 255))
+                    _sw2  = max(1, int(_surf.get_width()  * _sc))
+                    _sh2  = max(1, int(_surf.get_height() * _sc))
+                    _surf = pygame.transform.smoothscale(_surf, (_sw2, _sh2))
+                    sw, sh = self.screen.get_size()
+                    self.screen.blit(_surf, _surf.get_rect(center=(sw // 2, sh // 2)))
 
             if self.state == "title":
-                action = self.title_screen.update(mouse_pos, mouse_clicked, current_time)
-                self.title_screen.draw(current_time)
-                if action == "play":
-                    self._start_transition("level_select",
-                                           self.title_screen.play_button_rect.center)
+                if _title_ready:
+                    action = self.title_screen.update(mouse_pos, mouse_clicked, current_time)
+                    self.title_screen.draw(current_time)
+                    if action == "play":
+                        if self._music:
+                            self._music.on_play_pressed()
+                        self._start_transition("level_select",
+                                               self.title_screen.play_button_rect.center)
+                # else: black screen already filled above — do nothing
 
             elif self.state == "level_select":
                 action, idx = self.level_select.update(mouse_pos, mouse_clicked, current_time)
@@ -936,7 +1158,6 @@ class MenuManager:
                     self.state = self.transition_target_state
 
             pygame.display.flip()
-            self.clock.tick(60)
 
     def _handle_upload(self, file_path, word_bank: list[str] | None):
         try:
@@ -994,7 +1215,7 @@ class PauseScreen:
     def __init__(self, screen):
         self.screen = screen
         sw, sh = screen.get_size()
-        btn_font = pygame.font.Font(None, 56)
+        btn_font = pygame.font.Font(_FONT, 56)
         self.resume_button = Button(
             (sw // 2 - 120, sh // 2 - 50, 240, 60), "RESUME", btn_font,
         )

@@ -6,6 +6,11 @@ import time
 import os
 import math
 
+_FONT = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "assets", "images", "fonts", "tacobae-font", "Tacobae-pge2K.otf",
+)
+
 from . import constants as C
 from .rhythm import RhythmManager, calculate_lead_in
 from .input import Input
@@ -51,7 +56,7 @@ class Game:
 
         self.score = 0
         self.misses = 0
-        self.font = pygame.font.Font(None, 48)
+        self.font = pygame.font.Font(_FONT, 48)
         
         self.message = None
         self.message_duration = 0.0
@@ -135,21 +140,45 @@ class Game:
         _thread.start()
 
         # --- petal spinner loop (runs until thread finishes) ---
-        _target_angle  = 0.0
-        _display_angle = 0.0
-        _spin_clock    = pygame.time.Clock()
+        #
+        # Two independent petals with different periods — not in sync.
+        # Each maps t_norm [0,1) → angle with ease-in fall / ease-out rise.
+        # Petal 2 starts 3π/4 ahead in phase and runs at 65 % of petal 1's period.
+
+        _P1 = 60.0 / 45.0            # petal 1: one orbit per beat at 45 BPM
+        _P2 = _P1 * 0.65             # petal 2: noticeably faster
+        # 3π/4 out of 2π = 3/8 of a cycle → time offset for petal 2
+        _P2_OFFSET = _P2 * 0.375
+
+        _spin_start = time.time()
+        _spin_clock = pygame.time.Clock()
+
+        def _petal_angle(t_norm: float) -> float:
+            """Non-uniform orbital angle: ease-in fall (right), ease-out rise (left)."""
+            if t_norm < 0.5:
+                p    = t_norm / 0.5
+                ease = p * p                          # accelerates
+                return math.pi / 2 - math.pi * ease
+            else:
+                p    = (t_norm - 0.5) / 0.5
+                ease = 1.0 - (1.0 - p) ** 2          # decelerates
+                return -math.pi / 2 - math.pi * ease
 
         while _thread.is_alive():
             _spin_clock.tick(60)
-            _target_angle  += 3.5
-            _display_angle += (_target_angle - _display_angle) * 0.14
+            _elapsed = time.time() - _spin_start
+
+            _t1  = (_elapsed % _P1) / _P1
+            _a1  = _petal_angle(_t1)
+
+            _t2  = ((_elapsed + _P2_OFFSET) % _P2) / _P2
+            _a2  = _petal_angle(_t2)
 
             self.screen.fill((0, 0, 0))
-            for _i, _pimg in enumerate((_p1, _p2)):
-                _a  = math.radians(_display_angle + _i * 180)
-                _px = _cx + _radius * math.cos(_a)
-                _py = _cy + _radius * math.sin(_a)
-                _rot = pygame.transform.rotate(_pimg, -(_display_angle + _i * 180))
+            for _a, _pimg in ((_a1, _p1), (_a2, _p2)):
+                _px  = _cx + _radius * math.cos(_a)
+                _py  = _cy + _radius * math.sin(_a)
+                _rot = pygame.transform.rotate(_pimg, -math.degrees(_a))
                 self.screen.blit(_rot, _rot.get_rect(center=(int(_px), int(_py))))
             pygame.display.flip()
 
@@ -233,7 +262,7 @@ class Game:
         self.pause_screen: PauseScreen | None = None
         self.pause_time_accumulated = 0.0  # total time spent paused
         self._pause_start = 0.0
-        pause_font = pygame.font.Font(None, 36)
+        pause_font = pygame.font.Font(_FONT, 36)
         self.pause_button = Button(
             (screen_width - 100, 20, 80, 40),
             "II",
@@ -1001,7 +1030,7 @@ class Game:
         
         for i, char in enumerate(word):
             font_size = int(48 * final_scale)
-            char_font = pygame.font.Font(None, font_size)
+            char_font = pygame.font.Font(_FONT, font_size)
             
             char_surface = char_font.render(char, True, current_color)
             char_surface.set_alpha(final_alpha)
@@ -1033,7 +1062,7 @@ class Game:
 
         # Large font for background word
         font_size = 180
-        bg_font = pygame.font.Font(None, font_size)
+        bg_font = pygame.font.Font(_FONT, font_size)
 
         # Gray, semi-transparent color
         bg_color = (60, 60, 60)

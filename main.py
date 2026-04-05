@@ -2,6 +2,7 @@ import pygame
 from game.engine import Game
 from game.models import Level
 from game.menu import MenuManager
+from game.music import MusicManager
 
 SONG_PATH = "assets/audios/"
 SONG_NAMES = [
@@ -29,9 +30,11 @@ def main():
     pygame.display.set_caption("Key Dash")
     clock = pygame.time.Clock()
 
+    music = MusicManager()
+
     start_state = "title"
     while True:
-        menu = MenuManager(screen, clock, SONG_NAMES, start_state=start_state)
+        menu = MenuManager(screen, clock, SONG_NAMES, start_state=start_state, music=music)
         result = menu.run()
 
         if result is None:
@@ -79,8 +82,10 @@ def main():
         # Ariana Grande - Problem ft. Iggy Azalea 
         # words synced to song? is word detection from audio possible?
 
+        music.pause_for_game()
         game = Game(level=level, screen=screen, clock=clock)
         game.run()
+        music.resume_from_game()
         start_state = "level_select"
 
     pygame.quit()
