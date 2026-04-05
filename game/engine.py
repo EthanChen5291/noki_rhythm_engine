@@ -64,15 +64,7 @@ class Game:
         self._previous_word = None
         self._word_transition_start = 0.0
 
-        # --- loading
-        self.screen.fill((0, 0, 0))
-        loading_font = pygame.font.Font(None, 72)
-        loading_text = loading_font.render("Loading...", True, (255, 255, 255))
-        loading_rect = loading_text.get_rect(center=(screen_width//2, screen_height//2))
-        self.screen.blit(loading_text, loading_rect)
-        pygame.display.flip()
-
-        # --- load assets
+        # --- load quick assets first (cat frames, timeline, spinner petals)
         self.level = level
         abs_song_path = C._to_abs_path(level.song_path)
         if abs_song_path is None:
@@ -87,82 +79,109 @@ class Game:
             for f in sorted(os.listdir(cat_frames_path))
             if f.endswith(('.png', '.jpg', '.jpeg'))
         ]
-
         self.cat_frame_index = 0
         self.num_cat_frames = len(self.cat_frames)
 
         timeline_file = os.path.join(assets_path, 'noki_timeline.png')
         self.timeline_img = pygame.image.load(timeline_file).convert_alpha()
         self.timeline_img = pygame.transform.scale(self.timeline_img, (1920, 200))
-        
-        # --- update loading
-        self.screen.fill((0, 0, 0))
-        loading_text = loading_font.render("Generating beatmap...", True, (255, 255, 255))
-        loading_rect = loading_text.get_rect(center=(screen_width//2, screen_height//2))
-        self.screen.blit(loading_text, loading_rect)
-        pygame.display.flip()
 
-        self.song = get_song_info(self.song_path, expected_bpm=self.level.bpm, normalize=True)
-        self.beat_duration = 60 / self.song.bpm
+        # Petal spinner images
+        _psz   = 40
+        _p1    = pygame.transform.smoothscale(
+            pygame.image.load(os.path.join(assets_path, 'petal1.png')).convert_alpha(),
+            (_psz, _psz))
+        _p2    = pygame.transform.smoothscale(
+            pygame.image.load(os.path.join(assets_path, 'petal2.png')).convert_alpha(),
+            (_psz, _psz))
+        _cx, _cy   = screen_width // 2, screen_height // 2
+        _radius    = 50
 
-        # --- detect dual-side sections early (needed for beatmap generation)
-        self.pace_profile = classify_pace(self.song_path, self.song.bpm)
+        # --- run all heavy analysis + beatmap generation in a background thread
+        # so we can animate the spinner on the main thread
+        import threading as _threading
+        _result: dict  = {}
+        _errors: list  = []
 
-        self.dual_side_sections = detect_dual_side_sections(
-            self.song_path,
-            self.song.bpm,
-            self.pace_profile.pace_score,
-            self.song.beat_times
-        )
+        def _worker():
+            try:
+                song       = get_song_info(self.song_path, expected_bpm=level.bpm, normalize=True)
+                bdur       = 60 / song.bpm
+                pace       = classify_pace(self.song_path, song.bpm)
+                dual_secs  = detect_dual_side_sections(
+                    self.song_path, song.bpm, pace.pace_score, song.beat_times)
+                diff_prof  = C.DIFFICULTY_PROFILES.get(
+                    level.difficulty, C.DIFFICULTY_PROFILES["classic"])
+                beatmap    = generate_beatmap(
+                    word_list=level.word_bank, song=song,
+                    dual_side_sections=dual_secs, difficulty=level.difficulty)
+                lead_in    = calculate_lead_in(song.beat_times)
+                rhythm     = RhythmManager(
+                    beatmap, song.bpm, lead_in=lead_in,
+                    timing_scale=diff_prof.timing_scale)
+                drops      = detect_drops(song.beat_times, self.song_path, song.bpm)
+                tiers      = calculate_scroll_tiers(
+                    self.song_path, song.bpm, pace.pace_score, song.beat_times)
+                shifts     = calculate_energy_shifts(
+                    self.song_path, song.bpm, pace.pace_score, song.beat_times)
+                _result.update(song=song, beat_duration=bdur, pace_profile=pace,
+                               dual_side_sections=dual_secs, difficulty_profile=diff_prof,
+                               rhythm=rhythm, drop_events=drops, scroll_tiers=tiers,
+                               energy_shifts=shifts)
+            except Exception as exc:
+                _errors.append(exc)
 
-        self.difficulty_profile = C.DIFFICULTY_PROFILES.get(level.difficulty, C.DIFFICULTY_PROFILES["classic"])
+        _thread = _threading.Thread(target=_worker, daemon=True)
+        _thread.start()
 
-        beatmap = generate_beatmap(
-            word_list=level.word_bank,
-            song=self.song,
-            dual_side_sections=self.dual_side_sections,
-            difficulty=level.difficulty,
-        )
-        lead_in = calculate_lead_in(self.song.beat_times)
-        self.rhythm = RhythmManager(
-            beatmap, self.song.bpm, lead_in=lead_in,
-            timing_scale=self.difficulty_profile.timing_scale,
-        )
+        # --- petal spinner loop (runs until thread finishes) ---
+        _target_angle  = 0.0
+        _display_angle = 0.0
+        _spin_clock    = pygame.time.Clock()
+
+        while _thread.is_alive():
+            _spin_clock.tick(60)
+            _target_angle  += 3.5
+            _display_angle += (_target_angle - _display_angle) * 0.14
+
+            self.screen.fill((0, 0, 0))
+            for _i, _pimg in enumerate((_p1, _p2)):
+                _a  = math.radians(_display_angle + _i * 180)
+                _px = _cx + _radius * math.cos(_a)
+                _py = _cy + _radius * math.sin(_a)
+                _rot = pygame.transform.rotate(_pimg, -(_display_angle + _i * 180))
+                self.screen.blit(_rot, _rot.get_rect(center=(int(_px), int(_py))))
+            pygame.display.flip()
+
+            for _ev in pygame.event.get():
+                if _ev.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+        if _errors:
+            raise _errors[0]
+
+        # --- unpack thread results ---
+        self.song              = _result['song']
+        self.beat_duration     = _result['beat_duration']
+        self.pace_profile      = _result['pace_profile']
+        self.dual_side_sections = _result['dual_side_sections']
+        self.difficulty_profile = _result['difficulty_profile']
+        self.rhythm            = _result['rhythm']
+        self.drop_events       = _result['drop_events']
+        self.scroll_tiers      = _result['scroll_tiers']
+        self.energy_shifts     = _result['energy_shifts']
 
         self.input = Input()
 
-        # --- detect multiple drops for shockwave effects
-        self.drop_events = detect_drops(
-            self.song.beat_times,
-            self.song_path,
-            self.song.bpm
-        )
         self.shockwaves: list[M.Shockwave] = []
-        self.drops_triggered: set[int] = set()  # Track which drops have been triggered
+        self.drops_triggered: set[int] = set()
         self.drop_note_indices = self._find_drop_note_indices()
 
-        # --- classify pace and set scroll speed (pace_profile already computed above)
+        # --- scroll speed (derived from pace profile) ---
         self.base_scroll_speed = C.SCROLL_SPEED * self.difficulty_profile.scroll_scale
-
-        self.pace_bias = 0.85 + self.pace_profile.pace_score * 1.3
-
-        self.scroll_speed = self.base_scroll_speed * self.pace_bias
-
-        # --- calculate base scroll speed tiers (intensity-based)
-        self.scroll_tiers = calculate_scroll_tiers(
-            self.song_path,
-            self.song.bpm,
-            self.pace_profile.pace_score,
-            self.song.beat_times,
-        )
-
-        # --- calculate dynamic energy shifts (using aligned beat times)
-        self.energy_shifts = calculate_energy_shifts(
-            self.song_path,
-            self.song.bpm,
-            self.pace_profile.pace_score,
-            self.song.beat_times,
-        )
+        self.pace_bias         = 0.85 + self.pace_profile.pace_score * 1.3
+        self.scroll_speed      = self.base_scroll_speed * self.pace_bias
 
         # --- bounce mode
         self.bounce_events: list[BounceEvent] = []

@@ -383,28 +383,98 @@ class DifficultySelector:
 # ─── Title screen ────────────────────────────────────────────────────────────
 
 class TitleScreen:
+    _ASSETS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "images")
+
+    # play-button animation constants
+    _HOVER_SCALE   = 1.18
+    _CLICK_SHRINK  = 0.72
+    _CLICK_BOUNCE  = 1.22
+    _LERP_NORMAL   = 0.10
+    _LERP_FAST     = 0.22
+
     def __init__(self, screen):
         self.screen = screen
         sw, sh = screen.get_size()
-        self.title_font  = pygame.font.Font(None, 120)
-        self.button_font = pygame.font.Font(None, 64)
-        self.play_button = Button(
-            (sw // 2 - 100, sh // 2 + 40, 200, 70), "PLAY", self.button_font
+
+        # ── Title image (35 % smaller than the 50 % version → 32.5 % of sw) ──
+        raw_title = pygame.image.load(
+            os.path.join(self._ASSETS, "noki_maintitle.png")
+        ).convert_alpha()
+        target_w      = int(sw * 0.325)
+        target_h      = int(raw_title.get_height() * target_w / raw_title.get_width())
+        self.title_img = pygame.transform.smoothscale(raw_title, (target_w, target_h))
+        # moved down: centre title slightly below the screen midpoint
+        self.title_cx  = sw // 2
+        self.title_cy_base = sh // 2 - target_h // 2 + 20
+
+        # ── Play button image ─────────────────────────────────────────────────
+        raw_btn = pygame.image.load(
+            os.path.join(self._ASSETS, "playbutton.png")
+        ).convert_alpha()
+        btn_size = int(sh * 0.10)          # base display size
+        self._btn_base = pygame.transform.smoothscale(raw_btn, (btn_size, btn_size))
+        self._btn_size = btn_size
+        # position: below the title, shifted down a bit further
+        self.btn_cx = sw // 2
+        self.btn_cy = sh // 2 + target_h // 2 + 60
+
+        # animation state
+        self._scale        = 1.0
+        self._click_phase  = None   # None | "shrink" | "bounce"
+
+        # rect used by MenuManager as the transition origin
+        self.play_button_rect = pygame.Rect(
+            self.btn_cx - btn_size // 2,
+            self.btn_cy - btn_size // 2,
+            btn_size, btn_size,
         )
-        self.title_y_base = sh // 2 - 80
+
+    def _btn_hovered(self, mouse_pos) -> bool:
+        half = int(self._btn_size * self._scale) // 2
+        r = pygame.Rect(self.btn_cx - half, self.btn_cy - half, half * 2, half * 2)
+        return r.collidepoint(mouse_pos)
 
     def update(self, mouse_pos, mouse_clicked, _current_time):
-        self.play_button.check_hover(mouse_pos)
-        if self.play_button.check_click(mouse_pos, mouse_clicked):
-            return "play"
+        hovered = self._btn_hovered(mouse_pos)
+
+        if mouse_clicked and hovered and self._click_phase is None:
+            self._click_phase = "shrink"
+
+        # drive scale state machine
+        if self._click_phase == "shrink":
+            target = self._CLICK_SHRINK
+            self._scale += (target - self._scale) * self._LERP_FAST
+            if abs(self._scale - target) < 0.025:
+                self._click_phase = "bounce"
+
+        elif self._click_phase == "bounce":
+            target = self._CLICK_BOUNCE
+            self._scale += (target - self._scale) * self._LERP_FAST
+            if abs(self._scale - target) < 0.025:
+                self._click_phase = None
+                self._scale = self._HOVER_SCALE if hovered else 1.0
+                return "play"
+
+        else:
+            target = self._HOVER_SCALE if hovered else 1.0
+            self._scale += (target - self._scale) * self._LERP_NORMAL
+
         return None
 
     def draw(self, current_time):
         sw = self.screen.get_width()
+
+        # floating title
         y_offset = 8 * math.sin(current_time * 2)
-        surf     = self.title_font.render("KEY DASH", True, (255, 255, 255))
-        self.screen.blit(surf, surf.get_rect(center=(sw // 2, self.title_y_base + y_offset)))
-        self.play_button.draw(self.screen, current_time)
+        self.screen.blit(
+            self.title_img,
+            self.title_img.get_rect(center=(self.title_cx, self.title_cy_base + y_offset)),
+        )
+
+        # scaled play button
+        disp_size = max(1, int(self._btn_size * self._scale))
+        btn_surf  = pygame.transform.smoothscale(self._btn_base, (disp_size, disp_size))
+        self.screen.blit(btn_surf, btn_surf.get_rect(center=(self.btn_cx, self.btn_cy)))
 
 
 # ─── Level select screen ─────────────────────────────────────────────────────
@@ -822,7 +892,7 @@ class MenuManager:
                 self.title_screen.draw(current_time)
                 if action == "play":
                     self._start_transition("level_select",
-                                           self.title_screen.play_button.rect.center)
+                                           self.title_screen.play_button_rect.center)
 
             elif self.state == "level_select":
                 action, idx = self.level_select.update(mouse_pos, mouse_clicked, current_time)
