@@ -1081,8 +1081,8 @@ class MenuManager:
                 _beat_idx = int(_elapsed / _beat_dur)
                 _beat_t   = (_elapsed % _beat_dur) / _beat_dur   # 0→1 within beat
 
-                if _beat_idx in (0, 1, 2):
-                    _digit = str(3 - _beat_idx)
+                if _beat_idx in (0, 1, 2, 3):
+                    _digit = str(3 - _beat_idx) if _beat_idx < 3 else "go"
                     # timing: in=15%, hold=70%, out=15% of the beat
                     _IN   = 0.15
                     _OUT  = 0.15
