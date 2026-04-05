@@ -1,4 +1,4 @@
-<img src="assets/images/noki_preview.png" alt="Noki Preview" width="400">
+<img src="assets/images/noki_logo.png" alt="Noki Preview" width="400">
 
 ## What is this?
 
