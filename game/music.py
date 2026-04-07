@@ -28,6 +28,7 @@ class MusicManager:
     """
 
     # States
+    _WAITING     = "waiting"   # before user triggers the intro
     _INTRO       = "intro"
     _TITLE       = "title"
     _CROSSFADE   = "crossfade"
@@ -48,20 +49,22 @@ class MusicManager:
         self._snd_title_loop  = pygame.mixer.Sound(os.path.join(_AUDIO, "titleloop2.wav"))
         self._snd_levels      = pygame.mixer.Sound(os.path.join(_AUDIO, "levelsloop2.wav"))
 
-        self._state          = self._INTRO
+        self._state          = self._WAITING  # held here until start_intro() is called
         self._pre_game       = None
         self._fade_t         = 0.0
-        self._intro_start_t  = time.time()
+        self._intro_start_t  = None           # set when start_intro() is called
         self._video_done     = False   # set when video finishes; unlocks title screen
 
-        # Kick off the intro sound
+        # Channels ready but silent — music starts only when start_intro() is called
         self._ch0.set_volume(self._MASTER)
         self._ch1.set_volume(0.0)
-        self._ch0.play(self._snd_title_intro)
 
     # ── Called every frame from MenuManager.run() ────────────────────────────
 
     def update(self, dt: float) -> None:
+        if self._state == self._WAITING:
+            return   # nothing to do until start_intro() is called
+
         if self._state == self._INTRO:
             if not self._ch0.get_busy():
                 self._transition_to_title()
@@ -85,9 +88,22 @@ class MusicManager:
     # ── Event hooks ──────────────────────────────────────────────────────────
 
     @property
+    def needs_start(self) -> bool:
+        """True if start_intro() has not been called yet."""
+        return self._state == self._WAITING
+
+    def start_intro(self) -> None:
+        """Begin playing title2.wav and kick off the intro animation.
+        Called once the player interacts with the waiting ('...') screen."""
+        if self._state == self._WAITING:
+            self._state         = self._INTRO
+            self._intro_start_t = time.time()
+            self._ch0.play(self._snd_title_intro)
+
+    @property
     def intro_elapsed(self) -> float:
         """Seconds since title2.wav started; inf once intro is over."""
-        if self._state != self._INTRO:
+        if self._state != self._INTRO or self._intro_start_t is None:
             return float('inf')
         return time.time() - self._intro_start_t
 
@@ -95,7 +111,7 @@ class MusicManager:
     def title_ready(self) -> bool:
         """True once the video has finished (title screen can show).
         title2.wav may still be playing — it will naturally transition to titleloop2."""
-        return self._video_done or self._state != self._INTRO
+        return self._video_done or self._state not in (self._WAITING, self._INTRO)
 
     def on_intro_video_done(self) -> None:
         """Call when the intro video finishes.

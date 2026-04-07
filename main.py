@@ -1,14 +1,10 @@
 import pygame
 from game.engine import Game
 from game.models import Level
-from game.menu import MenuManager
+from game.menu import MenuManager, _load_scores, _save_scores
 from game.music import MusicManager
 
-# concerns
-
-# add ... screen before animation plays. song should wait until animation starts to begin playing. this is so it gives players time to load and get on the window quickly
-
-# add a menu UI -> whenever players click on a level, they see a menu with the difficulty and top score and play button. 
+# add a menu UI -> whenever players click on a level, they see a menu with the difficulty and top score and play button. it's a squarish-rectangle (longer horizontally) with black bg and white borders
 # in the actual levels screen (with all the levels), don't show the difficulty (that'll be toggles in the individual level menus) and just show the rank of the player's best score
 
 # ensure that the main title cat + main title + play button play at 125 bpm after play button is pressed and the player goes back to main title screen
@@ -132,6 +128,14 @@ def main():
         game.run()
         music.resume_from_game()
         start_state = "level_select"
+
+        # Persist top score for this song + difficulty
+        song_key = SONG_NAMES[selected]
+        scores   = _load_scores()
+        prev     = scores.get(song_key, {}).get(difficulty, 0)
+        if game.score > prev:
+            scores.setdefault(song_key, {})[difficulty] = game.score
+            _save_scores(scores)
 
     pygame.quit()
 

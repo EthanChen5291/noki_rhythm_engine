@@ -1101,7 +1101,9 @@ class Game:
             
             if position == 'center' and is_current and self.rhythm.char_event_idx < len(self.rhythm.beat_map):
                 current_event = self.rhythm.beat_map[self.rhythm.char_event_idx]
-                if current_event.word_text == word and current_event.char_idx == i:
+                if (not current_event.is_rest
+                        and current_event.word_text.startswith(word)
+                        and current_event.char_idx == i):
                     underline_width = int(C.UNDERLINE_LEN * final_scale)
                     line_x = char_x - 10 * final_scale
                     line_y = char_y + 50

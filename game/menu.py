@@ -223,6 +223,28 @@ def _save_word_banks(banks: dict[str, list[str]]) -> None:
         pass
 
 
+# ─── Per-song top-score persistence ─────────────────────────────────────────
+
+_SCORES_FILE = os.path.join("assets", "scores.json")
+
+
+def _load_scores() -> dict:
+    try:
+        with open(_SCORES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_scores(scores: dict) -> None:
+    try:
+        os.makedirs("assets", exist_ok=True)
+        with open(_SCORES_FILE, "w", encoding="utf-8") as f:
+            json.dump(scores, f, indent=2)
+    except Exception:
+        pass
+
+
 # ─── Floating petal background particle ─────────────────────────────────────
 
 class Petal:
@@ -354,7 +376,7 @@ class TextInput:
 # ─── Difficulty selector  ◀ Medium ▶ ────────────────────────────────────────
 
 class DifficultySelector:
-    LABELS = ["Easy",    "Medium",  "Hard"  ]
+    LABELS = ["Easy",    "Fair",    "Hard"  ]
     KEYS   = ["journey", "classic", "master"]
     COLORS = [
         (90,  210, 90),
@@ -566,8 +588,9 @@ class TitleScreen:
     _LERP_NORMAL   = 0.10
     _LERP_FAST     = 0.22
 
-    # beat-pulse constants  (72 BPM)
-    _BPM           = 72.0
+    # beat-pulse constants
+    _BPM_INTRO     = 72.0   # first-time intro (synced to title2.wav)
+    _BPM_RETURN    = 125.0  # after coming back from level select
     _BEAT_PEAK     = 1.14   # title scale on the beat
     _BTN_BEAT_PEAK = 1.20   # button scale boost on the beat
     _BEAT_LERP     = 0.18   # how fast the scale chases the target each frame
@@ -613,9 +636,9 @@ class TitleScreen:
             btn_size, btn_size,
         )
 
-        # beat tracking
-        self._beat_period  = 60.0 / self._BPM   # seconds per beat
-        self._last_beat    = -1                  # which beat index last fired
+        # beat tracking — starts at intro BPM, switches to 125 on return
+        self._beat_period  = 60.0 / self._BPM_INTRO
+        self._last_beat    = -1
 
         # ── noki_bop looping video ────────────────────────────────────────
         # Positioned centered vertically, 1/4 of screen width from left edge
@@ -662,7 +685,9 @@ class TitleScreen:
         return r.collidepoint(mouse_pos)
 
     def reset(self):
-        """Call whenever the title screen becomes active to clear stale animation state."""
+        """Call whenever the title screen becomes active to clear stale animation state.
+        Switches to 125 BPM (return visits after the play button has been pressed)."""
+        self._beat_period        = 60.0 / self._BPM_RETURN
         self._last_beat          = -1
         self._bop_acc            = 0.0
         self._title_scale        = 1.0
@@ -765,9 +790,19 @@ class LevelSelect:
     _LEFT_FRAC  = 0.35
     _RIGHT_FRAC = 0.65
 
-    def __init__(self, screen, song_names):
+    # rank thresholds (best score across all difficulties)
+    _RANKS = [
+        (80_000, "S", (255, 215,   0)),   # gold
+        (50_000, "A", (100, 210, 255)),   # cyan
+        (25_000, "B", ( 90, 220,  90)),   # green
+        (10_000, "C", (220, 200,  70)),   # yellow
+        (     1, "D", (210,  90,  90)),   # red
+    ]
+
+    def __init__(self, screen, song_names, scores=None):
         self.screen     = screen
         self.song_names = song_names
+        self._scores    = scores or {}
         sw, sh = screen.get_size()
 
         self.header_font  = pygame.font.Font(_FONT, 60)
@@ -861,12 +896,17 @@ class LevelSelect:
         # ── Song list (right 65%) ────────────────────────────────────────
         # btn_x anchored close to the divider so names get maximum width.
         # diff_cx pinned near the scrollbar so there's always a fixed right margin.
-        diff_max_lw = max(self.diff_font.size(l)[0] for l in DifficultySelector.LABELS)
-        diff_half_w = diff_max_lw // 2 + 32   # half-label + arrow zone
+        # Rank badge on the right — reserve space for one character + padding
+        self._rank_font = pygame.font.Font(_FONT, 44)
+        _rank_char_w    = self._rank_font.size("S")[0]
+        _rank_col_w     = _rank_char_w + 24          # badge column width
+        self._rank_cx   = self._sb_x - self._sb_margin - _rank_col_w // 2 - 4
 
-        self.btn_x   = div_x + 20
-        self.diff_cx = self._sb_x - self._sb_margin - diff_half_w
-        self.btn_w   = self.diff_cx - diff_half_w - 50 - self.btn_x
+        self.btn_x = div_x + 20
+        self.btn_w = self._rank_cx - _rank_col_w // 2 - 24 - self.btn_x
+
+        # Keep difficulty_selectors alive (used by MenuManager for initial LevelMenu state)
+        self.diff_cx = self._rank_cx   # unused for drawing; satisfies old references
 
         # store full (un-truncated) display names for marquee rendering
         self._full_names: list[str] = []
@@ -883,13 +923,24 @@ class LevelSelect:
                 display, self.button_font,
             ))
             self.difficulty_selectors.append(
-                DifficultySelector(self.diff_cx, btn_y + self.button_height // 2, self.diff_font)
+                DifficultySelector(self._rank_cx, btn_y + self.button_height // 2, self.diff_font)
             )
 
         _btn_sz = 52
         self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
         total = len(song_names) * (self.button_height + self.button_spacing)
         self.max_scroll = max(0, total - (sh - self.list_top - 40))
+
+    def _best_rank(self, song_name: str) -> tuple[str, tuple] | None:
+        """Return (letter, color) for the best score across all difficulties, or None."""
+        song_scores = self._scores.get(song_name, {})
+        if not song_scores:
+            return None
+        best = max(song_scores.values())
+        for threshold, letter, color in self._RANKS:
+            if best >= threshold:
+                return letter, color
+        return None
 
     def handle_scroll(self, event):
         if event.type == pygame.MOUSEWHEEL:
@@ -948,7 +999,6 @@ class LevelSelect:
         adj = (mouse_pos[0], mouse_pos[1] + self.scroll_offset)
         for i, btn in enumerate(self.level_buttons):
             btn.check_hover(adj)
-            self.difficulty_selectors[i].check_click(adj, mouse_clicked)
             if btn.check_click(adj, mouse_clicked):
                 return "select", i
 
@@ -1092,8 +1142,13 @@ class LevelSelect:
             self.screen.blit(text_surf, (draw_x, text_y))
             self.screen.set_clip(old_clip)
 
-            self.difficulty_selectors[i].draw(self.screen, current_time,
-                                               y_offset=self.scroll_offset)
+            rank = self._best_rank(self.song_names[i])
+            if rank is not None:
+                r_letter, r_color = rank
+                r_surf = self._rank_font.render(r_letter, True, r_color)
+                self.screen.blit(r_surf, r_surf.get_rect(
+                    center=(self._rank_cx, vis_y + self.button_height // 2)
+                ))
 
         self.screen.set_clip(None)
 
@@ -1110,6 +1165,232 @@ class LevelSelect:
             if thumb:
                 thumb_color = (160, 160, 185) if self._sb_drag else (110, 110, 135)
                 pygame.draw.rect(self.screen, thumb_color, thumb, border_radius=3)
+
+
+# ─── Level detail popup ───────────────────────────────────────────────────────
+
+class LevelMenu:
+    """Popup shown when a level row is clicked.
+    Left half: huge difficulty label + ◀ ▶ arrows.
+    Right half: huge best-score number.
+    Black bg, white border.
+    """
+    _BORD = 2
+
+    def __init__(self, screen, song_idx, song_name, initial_diff_idx, scores):
+        self.screen    = screen
+        self.song_idx  = song_idx
+        self.song_name = song_name
+        self._scores   = scores
+
+        sw, sh = screen.get_size()
+
+        # Popup geometry: 78% wide, 56% tall
+        pw = int(sw * 0.78)
+        ph = int(sh * 0.56)
+        px = (sw - pw) // 2
+        py = (sh - ph) // 2
+        self.rect = pygame.Rect(px, py, pw, ph)
+
+        # Layout constants
+        self._px, self._py, self._pw, self._ph = px, py, pw, ph
+        _pad         = max(24, pw // 30)
+        self._pad    = _pad
+        # horizontal midpoint splits left (difficulty) / right (score)
+        self._mid_x  = px + pw // 2
+        # top strip height for title
+        self._top_h  = int(ph * 0.20)
+        # bottom strip height for play button
+        self._bot_h  = int(ph * 0.28)
+        # body band between strips
+        self._body_top    = py + self._top_h
+        self._body_bottom = py + ph - self._bot_h
+        self._body_cy     = (self._body_top + self._body_bottom) // 2
+
+        # Fonts
+        _title_sz = max(28, ph // 10)
+        _big_sz   = max(64, ph // 4)      # difficulty + score
+        _sub_sz   = max(20, ph // 18)     # "BEST" label
+        _btn_sz   = max(30, ph // 8)
+        self._title_font = pygame.font.Font(_FONT, _title_sz)
+        self._big_font   = pygame.font.Font(_FONT, _big_sz)
+        self._sub_font   = pygame.font.Font(_FONT, _sub_sz)
+        self._btn_font   = pygame.font.Font(_FONT, _btn_sz)
+
+        # DifficultySelector — only used for state & arrow-click logic.
+        # We draw it ourselves at the right size.
+        _dummy_font = pygame.font.Font(_FONT, _sub_sz)
+        self._diff = DifficultySelector(0, 0, _dummy_font)   # cx/cy unused
+        self._diff.selected = max(0, min(2, initial_diff_idx))
+
+        # Arrow hit rects (set each frame in draw)
+        self._left_arrow_rect:  pygame.Rect | None = None
+        self._right_arrow_rect: pygame.Rect | None = None
+
+        # Play button — centered in bottom strip, wide and tall
+        btn_w = int(pw * 0.52)
+        btn_h = int(self._bot_h * 0.62)
+        self._play_rect = pygame.Rect(
+            px + (pw - btn_w) // 2,
+            py + ph - self._bot_h + (self._bot_h - btn_h) // 2,
+            btn_w, btn_h,
+        )
+        self._play_hovered = False
+        self._play_scale   = 1.0
+
+        # Close × — top-right corner
+        close_sz = 30
+        self._close_rect = pygame.Rect(
+            px + pw - _pad - close_sz,
+            py + _pad // 2,
+            close_sz, close_sz,
+        )
+        self._close_hovered = False
+
+        # Dim overlay
+        self._overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        self._overlay.fill((0, 0, 0, 155))
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
+    def _top_score(self) -> int | None:
+        return self._scores.get(self.song_name, {}).get(self._diff.difficulty)
+
+    # ── public API ──────────────────────────────────────────────────────────
+
+    def update(self, mouse_pos, mouse_clicked, _current_time):
+        """Returns 'play', 'close', or None."""
+        self._play_hovered  = self._play_rect.collidepoint(mouse_pos)
+        self._close_hovered = self._close_rect.collidepoint(mouse_pos)
+
+        if mouse_clicked:
+            if self._play_hovered:
+                return "play"
+            if self._close_hovered:
+                return "close"
+            if not self.rect.collidepoint(mouse_pos):
+                return "close"
+            # Arrow clicks (rects set by last draw())
+            if self._left_arrow_rect and self._left_arrow_rect.collidepoint(mouse_pos):
+                if self._diff.selected > 0:
+                    self._diff.selected -= 1
+            elif self._right_arrow_rect and self._right_arrow_rect.collidepoint(mouse_pos):
+                if self._diff.selected < 2:
+                    self._diff.selected += 1
+
+        target = 1.05 if self._play_hovered else 1.0
+        self._play_scale += (target - self._play_scale) * 0.18
+        return None
+
+    @staticmethod
+    def _draw_tri(screen, color, cx, cy, direction, w=14, h=22):
+        hw, hh = w // 2, h // 2
+        if direction == "left":
+            pts = [(cx - hw, cy), (cx + hw, cy - hh), (cx + hw, cy + hh)]
+        else:
+            pts = [(cx + hw, cy), (cx - hw, cy - hh), (cx - hw, cy + hh)]
+        pygame.draw.polygon(screen, color, pts)
+
+    def draw(self, _current_time):
+        px, py, pw, ph = self._px, self._py, self._pw, self._ph
+        pad = self._pad
+
+        # dim overlay + panel
+        self.screen.blit(self._overlay, (0, 0))
+        pygame.draw.rect(self.screen, (8, 8, 14),      self.rect, border_radius=14)
+        pygame.draw.rect(self.screen, (255, 255, 255),  self.rect, self._BORD, border_radius=14)
+
+        diff_col = DifficultySelector.COLORS[self._diff.selected]
+
+        # ── song title (top strip) ───────────────────────────────────────────
+        display_name = os.path.splitext(self.song_name)[0]
+        name_surf = self._title_font.render(display_name, True, (220, 220, 220))
+        max_title_w = pw - pad * 2 - 44
+        if name_surf.get_width() > max_title_w:
+            clipped = pygame.Surface((max_title_w, name_surf.get_height()), pygame.SRCALPHA)
+            clipped.blit(name_surf, (0, 0))
+            name_surf = clipped
+        title_cy = py + self._top_h // 2
+        self.screen.blit(name_surf, name_surf.get_rect(center=(px + pw // 2, title_cy)))
+
+        # thin rule below title
+        rule_y = py + self._top_h - 1
+        pygame.draw.line(self.screen, (50, 50, 60), (px + pad, rule_y), (px + pw - pad, rule_y), 1)
+
+        # ── close × ─────────────────────────────────────────────────────────
+        xc = (255, 80, 80) if self._close_hovered else (120, 120, 130)
+        cx, cy = self._close_rect.center
+        sz = 10
+        pygame.draw.line(self.screen, xc, (cx - sz, cy - sz), (cx + sz, cy + sz), 2)
+        pygame.draw.line(self.screen, xc, (cx + sz, cy - sz), (cx - sz, cy + sz), 2)
+
+        # ── vertical divider ────────────────────────────────────────────────
+        pygame.draw.line(self.screen, (45, 45, 55),
+                         (self._mid_x, self._body_top + pad // 2),
+                         (self._mid_x, self._body_bottom - pad // 2), 1)
+
+        # ── LEFT HALF: huge difficulty label + arrows ────────────────────────
+        left_cx = px + pw // 4
+
+        label = DifficultySelector.LABELS[self._diff.selected].upper()
+        diff_surf = self._big_font.render(label, True, diff_col)
+        # vertically center in body, shifted up slightly to leave room for arrows
+        diff_y = self._body_cy - int(self._ph * 0.06)
+        self.screen.blit(diff_surf, diff_surf.get_rect(center=(left_cx, diff_y)))
+
+        # arrows below the label
+        arrow_y  = diff_y + diff_surf.get_height() // 2 + 28
+        arrow_gap = 44
+        a_color  = (180, 180, 180)
+
+        if self._diff.selected > 0:
+            self._draw_tri(self.screen, a_color, left_cx - arrow_gap, arrow_y, "left")
+            self._left_arrow_rect = pygame.Rect(
+                left_cx - arrow_gap - 22, arrow_y - 18, 44, 36
+            )
+        else:
+            self._left_arrow_rect = None
+
+        if self._diff.selected < 2:
+            self._draw_tri(self.screen, a_color, left_cx + arrow_gap, arrow_y, "right")
+            self._right_arrow_rect = pygame.Rect(
+                left_cx + arrow_gap - 22, arrow_y - 18, 44, 36
+            )
+        else:
+            self._right_arrow_rect = None
+
+        # ── RIGHT HALF: "BEST" + huge score ─────────────────────────────────
+        right_cx = px + pw * 3 // 4
+
+        sub_surf = self._sub_font.render("Best", True, (110, 170, 230))
+        sub_y    = self._body_cy - int(self._ph * 0.10)
+        self.screen.blit(sub_surf, sub_surf.get_rect(center=(right_cx, sub_y)))
+
+        top   = self._top_score()
+        s_txt = f"{top:,}" if top is not None else "- -"
+        s_surf = self._big_font.render(s_txt, True, (255, 255, 255))
+        self.screen.blit(s_surf, s_surf.get_rect(
+            center=(right_cx, self._body_cy + int(self._ph * 0.06))
+        ))
+
+        # ── thin rule above play button ──────────────────────────────────────
+        rule2_y = self._body_bottom
+        pygame.draw.line(self.screen, (50, 50, 60),
+                         (px + pad, rule2_y), (px + pw - pad, rule2_y), 1)
+
+        # ── PLAY button (bottom strip) ───────────────────────────────────────
+        bw = max(1, int(self._play_rect.w * self._play_scale))
+        bh = max(1, int(self._play_rect.h * self._play_scale))
+        br = pygame.Rect(
+            self._play_rect.centerx - bw // 2,
+            self._play_rect.centery - bh // 2,
+            bw, bh,
+        )
+        btn_col = (255, 255, 255) if self._play_hovered else (190, 190, 210)
+        pygame.draw.rect(self.screen, (0, 0, 0), br, border_radius=8)
+        pygame.draw.rect(self.screen, btn_col,   br, 2, border_radius=8)
+        p_surf = self._btn_font.render("PLAY", True, btn_col)
+        self.screen.blit(p_surf, p_surf.get_rect(center=br.center))
 
 
 # ─── File upload screen ───────────────────────────────────────────────────────
@@ -1314,8 +1595,13 @@ class MenuManager:
         self.state      = start_state
         self._music     = music   # MusicManager | None
 
+        # load scores first — needed by LevelSelect
+        self._scores              = _load_scores()
+        self._level_menu: LevelMenu | None = None
+        self._pending_difficulty: str | None = None
+
         self.title_screen       = TitleScreen(screen)
-        self.level_select       = LevelSelect(screen, song_names)
+        self.level_select       = LevelSelect(screen, song_names, self._scores)
         self.file_upload_screen = FileUploadScreen(screen)
         if start_state != "title":
             self.title_screen.reset()
@@ -1341,6 +1627,14 @@ class MenuManager:
         self._video_acc       = 0.0
         self._video_frame_dur = 1.0 / 30.0
 
+        # ── Waiting ("...") screen ────────────────────────────────────────────
+        # Shown once before the intro animation so players have time to get ready.
+        self._show_waiting  = (music is not None and music.needs_start)
+        self._dots_timer    = 0.0
+        self._dots_count    = 1        # start with one dot visible
+        _dots_font_size     = max(48, screen.get_height() // 12)
+        self._dots_font     = pygame.font.Font(_FONT, _dots_font_size)
+
         if not self._video_done:
             try:
                 import cv2  # type: ignore
@@ -1360,6 +1654,8 @@ class MenuManager:
 
         # per-song word banks (filename → word list)
         self.song_word_banks: dict[str, list[str]] = _load_word_banks()
+
+        self._pending_difficulty: str | None = None
 
     def _word_bank_for(self, idx: int) -> list[str]:
         name = self.song_names[idx]
@@ -1383,6 +1679,29 @@ class MenuManager:
                 events.append(event)
 
             dt = self.clock.tick(60) / 1000.0
+
+            # ── Waiting ("...") screen ────────────────────────────────────────
+            if self._show_waiting:
+                # Check for any input to start
+                for event in events:
+                    if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                        self._show_waiting = False
+                        if self._music:
+                            self._music.start_intro()
+                        break
+
+                if self._show_waiting:
+                    self.screen.fill((0, 0, 0))
+                    self._dots_timer += dt
+                    if self._dots_timer >= 0.22:
+                        self._dots_timer = 0.0
+                        self._dots_count = (self._dots_count % 3) + 1
+                    dots_str = "." * self._dots_count
+                    sw2, sh2 = self.screen.get_size()
+                    dot_surf = self._dots_font.render(dots_str, True, (220, 220, 220))
+                    self.screen.blit(dot_surf, dot_surf.get_rect(center=(sw2 // 2, sh2 // 2)))
+                    pygame.display.flip()
+                    continue
 
             if self._music:
                 self._music.update(dt)
@@ -1441,8 +1760,27 @@ class MenuManager:
                 # else: black screen already filled above — do nothing
 
             elif self.state == "level_select":
-                action, idx = self.level_select.update(mouse_pos, mouse_clicked, current_time)
+                # while popup is open: suppress clicks AND hover in the background
+                ls_click  = mouse_clicked and self._level_menu is None
+                ls_mouse  = mouse_pos if self._level_menu is None else (-9999, -9999)
+                action, idx = self.level_select.update(ls_mouse, ls_click, current_time)
                 self.level_select.draw(current_time)
+
+                # ── level detail popup ────────────────────────────────────────
+                if self._level_menu is not None:
+                    lm_action = self._level_menu.update(mouse_pos, mouse_clicked, current_time)
+                    self._level_menu.draw(current_time)
+                    if lm_action == "play":
+                        self._pending_difficulty = self._level_menu._diff.difficulty
+                        li = self._level_menu.song_idx
+                        btn = self.level_select.level_buttons[li]
+                        origin = (btn.rect.centerx,
+                                  btn.rect.centery - self.level_select.scroll_offset)
+                        self._level_menu = None
+                        self._start_transition("launch", origin, li)
+                    elif lm_action == "close":
+                        self._level_menu = None
+
                 if action == "back":
                     self._start_transition("title", self.level_select.back_button.rect.center)
                 elif action == "upload":
@@ -1450,10 +1788,11 @@ class MenuManager:
                     origin = self.level_select.upload_rect.center
                     self._start_transition("upload", origin)
                 elif action == "select":
-                    btn    = self.level_select.level_buttons[idx]
-                    origin = (btn.rect.centerx,
-                              btn.rect.centery - self.level_select.scroll_offset)
-                    self._start_transition("launch", origin, idx)
+                    diff_idx = self.level_select.difficulty_selectors[idx].selected
+                    self._level_menu = LevelMenu(
+                        self.screen, idx, self.song_names[idx],
+                        diff_idx, self._scores,
+                    )
 
             elif self.state == "upload":
                 action, fpath, words = self.file_upload_screen.update(
@@ -1465,7 +1804,7 @@ class MenuManager:
                 elif action == "upload":
                     ok, msg = self._handle_upload(fpath, words)
                     if ok:
-                        self.level_select = LevelSelect(self.screen, self.song_names)
+                        self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
                         self.state = "level_select"
                     else:
                         self.file_upload_screen.show_error(msg)
@@ -1476,7 +1815,9 @@ class MenuManager:
                 if progress >= 1.0:
                     if self.transition_target_state == "launch":
                         idx        = self.transition_selected
-                        difficulty = self.level_select.difficulty_selectors[idx].difficulty
+                        difficulty = (self._pending_difficulty
+                                      or self.level_select.difficulty_selectors[idx].difficulty)
+                        self._pending_difficulty = None
                         word_bank  = self._word_bank_for(idx)
                         return (idx, difficulty, word_bank)
                     self.state = self.transition_target_state

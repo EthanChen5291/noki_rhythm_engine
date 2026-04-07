@@ -96,6 +96,6 @@ DIFFICULTY_PROFILES = {
     "master": DifficultyProfile(
         target_cps=4.5, min_cps=3.5, max_cps=6.0,
         cps_tolerance=0.4, min_char_spacing=0.16,
-        timing_scale=0.7, scroll_scale=1.25,
+        timing_scale=0.85, scroll_scale=1.25,
     ),
 }
