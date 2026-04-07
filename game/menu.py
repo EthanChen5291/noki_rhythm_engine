@@ -930,7 +930,7 @@ class LevelSelect:
         self._rename_idx: int | None = None
         self._rename_input: TextInput | None = None
         self._rename_result: tuple[int, str] = (0, "")
-        self._rename_font = pygame.font.Font(_FONT, 34)
+        self._rename_font = pygame.font.Font(_FONT, 42)   # matches button_font
 
         _btn_sz = 52
         self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
@@ -1011,9 +1011,14 @@ class LevelSelect:
                     if ev.key == pygame.K_RETURN:
                         result = self._finish_rename()
                         if result is not None:
-                            self._rename_result = result  # (idx, new_name) stored for caller
+                            self._rename_result = result
                             return "rename", result[0]
                         return None, -1
+                    elif ev.key == pygame.K_ESCAPE:
+                        cancel_idx = self._rename_idx if self._rename_idx is not None else -1
+                        self._rename_idx   = None
+                        self._rename_input = None
+                        return "cancel_upload", cancel_idx
                     elif ev.key == pygame.K_BACKSPACE:
                         self._rename_input.text = self._rename_input.text[:-1]
                     elif ev.unicode.isprintable():
@@ -1191,20 +1196,30 @@ class LevelSelect:
 
             # ── inline rename textbox (replaces text for the renaming slot) ──
             if self._rename_input is not None and self._rename_idx == i:
-                rename_rect = pygame.Rect(
-                    self._rename_input.rect.x,
-                    vis_y + (self._rename_input.rect.y - btn.rect.y),
-                    self._rename_input.rect.w,
-                    self._rename_input.rect.h,
-                )
-                # fill slot bg
-                pygame.draw.rect(self.screen, (12, 12, 20),
-                                 pygame.Rect(btn.rect.x, vis_y, btn.rect.w, btn.rect.h), border_radius=6)
-                # draw textbox at scroll-adjusted position
-                saved_rect = self._rename_input.rect
-                self._rename_input.rect = rename_rect
-                self._rename_input.draw(self.screen, current_time)
-                self._rename_input.rect = saved_rect
+                inp   = self._rename_input
+                cx    = btn.rect.x + btn.rect.w // 2   # horizontal center of slot
+                cy    = vis_y + btn.rect.h // 2
+
+                display = inp.text if inp.text else inp.placeholder
+                color   = (255, 255, 255) if inp.text else (90, 90, 115)
+                tsurf   = self._rename_font.render(display, True, color)
+                th      = tsurf.get_height()
+
+                # clip to the slot width so text doesn't overflow into rank column
+                old_clip = self.screen.get_clip()
+                slot_clip = pygame.Rect(btn.rect.x, vis_y, btn.rect.w, btn.rect.h)
+                self.screen.set_clip(slot_clip.clip(old_clip))
+                self.screen.blit(tsurf, tsurf.get_rect(center=(cx, cy)))
+                self.screen.set_clip(old_clip)
+
+                # blinking cursor at right edge of text, centered vertically
+                if int(current_time * 2) % 2 == 0:
+                    tw = tsurf.get_width()
+                    cur_x = cx + tw // 2 + 3
+                    cur_x = min(cur_x, btn.rect.x + btn.rect.w - 4)
+                    pygame.draw.line(self.screen, (200, 200, 255),
+                                     (cur_x, cy - th // 2 + 2),
+                                     (cur_x, cy + th // 2 - 2), 2)
             else:
                 rank = self._best_rank(self.song_names[i])
                 if rank is not None:
@@ -1887,6 +1902,13 @@ class MenuManager:
                         if ok:
                             self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
                             self.level_select.begin_rename(0)  # index 0 = newly inserted slot
+                elif action == "cancel_upload":
+                    # Escape during rename — remove the just-added song slot
+                    cancel_idx = idx  # idx holds the rename slot index
+                    if 0 <= cancel_idx < len(self.song_names):
+                        removed = self.song_names.pop(cancel_idx)
+                        self.song_word_banks.pop(removed, None)
+                    self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
                 elif action == "rename":
                     rename_idx, new_name = self.level_select._rename_result
                     # Update display name in level_select lists

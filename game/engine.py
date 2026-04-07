@@ -191,14 +191,14 @@ class Game:
         _SHADOW_ALPHAS = [120, 60, 25]   # most-recent ghost → oldest
 
         def _petal_angle(t_norm: float) -> float:
-            """Non-uniform orbital angle: ease-in fall (right), ease-out rise (left)."""
+            """Non-uniform orbital angle: ease-in fall, quartic ease-out rise (teeters at top)."""
             if t_norm < 0.5:
                 p    = t_norm / 0.5
-                ease = p * p
+                ease = p * p                           # quadratic ease-in: accelerates into fall
                 return math.pi / 2 - math.pi * ease
             else:
                 p    = (t_norm - 0.5) / 0.5
-                ease = 1.0 - (1.0 - p) ** 2
+                ease = 1.0 - (1.0 - p) ** 4           # quartic ease-out: rises fast, crawls to top
                 return -math.pi / 2 - math.pi * ease
 
         # Each ghost lags behind by _LAG_TIME * step seconds in actual time.
@@ -808,10 +808,8 @@ class Game:
         """Draw a speed change arrow spanning the full measure line"""
         if speed_up:
             arrow_color = (0, 200, 255)
-            glow_color = (0, 100, 200, 80)
         else:
             arrow_color = (200, 150, 100)
-            glow_color = (50, 100, 180, 80)
 
         arrow_height = timeline_height
         arrow_width = 24
@@ -1041,7 +1039,6 @@ class Game:
         position: str,  # 'left', 'center', 'right'
         transition_progress: float,
         is_current: bool,
-        current_char_idx: int,
         fading_out: bool = False,
         adjacent_word_width: int = 0,
         y_offset: float = 0
@@ -1200,7 +1197,6 @@ class Game:
         char_spacing = 60
         current_word_width = len(current_word) * char_spacing if current_word else 0
         next_word_width = len(next_word) * char_spacing if next_word else 0
-        prev_word_width = len(self._previous_word) * char_spacing if hasattr(self, '_previous_word') and self._previous_word else 0
         
         if current_word != getattr(self, '_last_displayed_word', None):
             self._word_transition_start = current_time
@@ -1222,7 +1218,6 @@ class Game:
                 position='center',
                 transition_progress=ease_progress,
                 is_current=True,
-                current_char_idx=self.rhythm.char_event_idx,
                 adjacent_word_width=next_word_width,
                 y_offset=word_y_offset
             )
@@ -1233,7 +1228,6 @@ class Game:
                 position='right',
                 transition_progress=ease_progress,
                 is_current=False,
-                current_char_idx=-1,
                 adjacent_word_width=current_word_width,
                 y_offset=word_y_offset
             )
@@ -1244,7 +1238,6 @@ class Game:
                 position='left',
                 transition_progress=ease_progress,
                 is_current=False,
-                current_char_idx=-1,
                 fading_out=True,
                 adjacent_word_width=current_word_width,
                 y_offset=word_y_offset
