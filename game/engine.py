@@ -179,7 +179,7 @@ class Game:
         # Each maps t_norm [0,1) → angle with ease-in fall / ease-out rise.
         # Petal 2 starts 3π/4 ahead in phase and runs at 65 % of petal 1's period.
 
-        _P1 = 60.0 / 45.0            # petal 1: one orbit per beat at 45 BPM
+        _P1 = (60.0 / 45.0) / 0.7   # petal 1: 30% slower
         _P2 = _P1 * 0.65             # petal 2: noticeably faster
         # 3π/4 out of 2π = 3/8 of a cycle → time offset for petal 2
         _P2_OFFSET = _P2 * 0.375
@@ -187,33 +187,52 @@ class Game:
         _spin_start = time.time()
         _spin_clock = pygame.time.Clock()
 
+        _SHADOW_STEPS  = 3
+        _SHADOW_ALPHAS = [120, 60, 25]   # most-recent ghost → oldest
+
         def _petal_angle(t_norm: float) -> float:
             """Non-uniform orbital angle: ease-in fall (right), ease-out rise (left)."""
             if t_norm < 0.5:
                 p    = t_norm / 0.5
-                ease = p * p                          # accelerates
+                ease = p * p
                 return math.pi / 2 - math.pi * ease
             else:
                 p    = (t_norm - 0.5) / 0.5
-                ease = 1.0 - (1.0 - p) ** 2          # decelerates
+                ease = 1.0 - (1.0 - p) ** 2
                 return -math.pi / 2 - math.pi * ease
+
+        # Each ghost lags behind by _LAG_TIME * step seconds in actual time.
+        # We evaluate _petal_angle at those earlier t_norms so the ghost is always
+        # where the petal *was* — no direction arithmetic, no wraparound bugs.
+        _LAG_TIME = 0.045   # seconds each consecutive ghost lags behind
+
+        def _draw_petal_with_shadow(pimg, elapsed, period, offset):
+            t_now  = ((elapsed + offset) % period) / period
+            a_now  = _petal_angle(t_now)
+            # draw ghosts from oldest → newest so newer ones paint over older
+            for step in range(_SHADOW_STEPS, 0, -1):
+                past_elapsed = elapsed - _LAG_TIME * step
+                t_past = ((past_elapsed + offset) % period) / period
+                ghost_a = _petal_angle(t_past)
+                gx  = _cx + _radius * math.cos(ghost_a)
+                gy  = _cy - _radius * math.sin(ghost_a)
+                grot  = pygame.transform.rotate(pimg, math.degrees(ghost_a))
+                gsurf = grot.copy()
+                gsurf.set_alpha(_SHADOW_ALPHAS[step - 1])
+                self.screen.blit(gsurf, gsurf.get_rect(center=(int(gx), int(gy))))
+            # main petal
+            px  = _cx + _radius * math.cos(a_now)
+            py  = _cy - _radius * math.sin(a_now)
+            rot = pygame.transform.rotate(pimg, math.degrees(a_now))
+            self.screen.blit(rot, rot.get_rect(center=(int(px), int(py))))
 
         while _thread.is_alive():
             _spin_clock.tick(60)
             _elapsed = time.time() - _spin_start
 
-            _t1  = (_elapsed % _P1) / _P1
-            _a1  = _petal_angle(_t1)
-
-            _t2  = ((_elapsed + _P2_OFFSET) % _P2) / _P2
-            _a2  = _petal_angle(_t2)
-
             self.screen.fill((0, 0, 0))
-            for _a, _pimg in ((_a1, _p1), (_a2, _p2)):
-                _px  = _cx + _radius * math.cos(_a)
-                _py  = _cy + _radius * math.sin(_a)
-                _rot = pygame.transform.rotate(_pimg, -math.degrees(_a))
-                self.screen.blit(_rot, _rot.get_rect(center=(int(_px), int(_py))))
+            _draw_petal_with_shadow(_p1, _elapsed, _P1, 0.0)
+            _draw_petal_with_shadow(_p2, _elapsed, _P2, _P2_OFFSET)
             pygame.display.flip()
 
             for _ev in pygame.event.get():
@@ -370,7 +389,7 @@ class Game:
             self._exit_to_menu = True
             self.running = False
 
-    def update_cat_animation(self, _dt: float):
+    def update_cat_animation(self):
         """Select noki_bop frame, synced to song beat_times.
         Uses elapsed time from level start during lead-in so animation never freezes."""
         if not self._bop_frames:
@@ -614,7 +633,7 @@ class Game:
                 note.is_rest = True
                 note.char = ""
 
-    def update_bounce_state(self, current_time: float, dt: float):
+    def update_bounce_state(self, current_time: float):
         """Update bounce mode: toggle direction when crossing bounce obstacles."""
         song_time = current_time - self.rhythm.lead_in
 
@@ -854,13 +873,13 @@ class Game:
         current_time = time.perf_counter() - self.rhythm.start_time
 
         self.update_dynamic_scroll_speed(current_time)
-        self.update_bounce_state(current_time, dt)
+        self.update_bounce_state(current_time)
         self.update_cat_position(current_time, dt)
         self.update_timeline_animation(dt)
 
         self.update_shockwaves(dt)
 
-        self.update_cat_animation(dt)
+        self.update_cat_animation()
         if self._bop_surf is not None:
             self.screen.blit(self._bop_surf, (int(self.cat_current_x), 520))
         

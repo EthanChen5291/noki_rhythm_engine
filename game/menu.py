@@ -926,10 +926,40 @@ class LevelSelect:
                 DifficultySelector(self._rank_cx, btn_y + self.button_height // 2, self.diff_font)
             )
 
+        # inline rename state (set by begin_rename after upload)
+        self._rename_idx: int | None = None
+        self._rename_input: TextInput | None = None
+        self._rename_result: tuple[int, str] = (0, "")
+        self._rename_font = pygame.font.Font(_FONT, 34)
+
         _btn_sz = 52
         self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
         total = len(song_names) * (self.button_height + self.button_spacing)
         self.max_scroll = max(0, total - (sh - self.list_top - 40))
+
+    def begin_rename(self, idx: int):
+        """Start an inline rename for the slot at idx (scroll it into view first)."""
+        self._rename_idx = idx
+        btn = self.level_buttons[idx]
+        # build a TextInput that fills the button's text area
+        rect = pygame.Rect(btn.rect.x + 8, btn.rect.y + 8,
+                           btn.rect.w - 16, btn.rect.h - 16)
+        self._rename_input = TextInput(rect, self._rename_font, placeholder="Enter song name…")
+        self._rename_input.active = True
+        # scroll so the new slot is visible
+        target_y = btn.rect.y - self.list_top
+        self.scroll_offset = max(0, min(target_y, self.max_scroll))
+
+    def _finish_rename(self) -> tuple[int, str] | None:
+        """Commit rename; returns (idx, new_display) or None if blank (keep original)."""
+        idx   = self._rename_idx
+        inp   = self._rename_input
+        self._rename_idx   = None
+        self._rename_input = None
+        if idx is None or inp is None:
+            return None
+        name = inp.text.strip()
+        return (idx, name) if name else None
 
     def _best_rank(self, song_name: str) -> tuple[str, tuple] | None:
         """Return (letter, color) for the best score across all difficulties, or None."""
@@ -971,8 +1001,25 @@ class LevelSelect:
         )
         return pygame.Rect(self._sb_x, thumb_y, self._sb_w, thumb_h)
 
-    def update(self, mouse_pos, mouse_clicked, _current_time):
+    def update(self, mouse_pos, mouse_clicked, _current_time, events=None):
         self._mouse_pos = mouse_pos
+
+        # ── inline rename mode ───────────────────────────────────────────
+        if self._rename_input is not None and events is not None:
+            for ev in events:
+                if ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_RETURN:
+                        result = self._finish_rename()
+                        if result is not None:
+                            self._rename_result = result  # (idx, new_name) stored for caller
+                            return "rename", result[0]
+                        return None, -1
+                    elif ev.key == pygame.K_BACKSPACE:
+                        self._rename_input.text = self._rename_input.text[:-1]
+                    elif ev.unicode.isprintable():
+                        if len(self._rename_input.text) < 80:
+                            self._rename_input.text += ev.unicode
+            return None, -1  # swallow all other actions while renaming
 
         if self.back_button.update(mouse_pos, mouse_clicked):
             return "back", -1
@@ -1142,13 +1189,30 @@ class LevelSelect:
             self.screen.blit(text_surf, (draw_x, text_y))
             self.screen.set_clip(old_clip)
 
-            rank = self._best_rank(self.song_names[i])
-            if rank is not None:
-                r_letter, r_color = rank
-                r_surf = self._rank_font.render(r_letter, True, r_color)
-                self.screen.blit(r_surf, r_surf.get_rect(
-                    center=(self._rank_cx, vis_y + self.button_height // 2)
-                ))
+            # ── inline rename textbox (replaces text for the renaming slot) ──
+            if self._rename_input is not None and self._rename_idx == i:
+                rename_rect = pygame.Rect(
+                    self._rename_input.rect.x,
+                    vis_y + (self._rename_input.rect.y - btn.rect.y),
+                    self._rename_input.rect.w,
+                    self._rename_input.rect.h,
+                )
+                # fill slot bg
+                pygame.draw.rect(self.screen, (12, 12, 20),
+                                 pygame.Rect(btn.rect.x, vis_y, btn.rect.w, btn.rect.h), border_radius=6)
+                # draw textbox at scroll-adjusted position
+                saved_rect = self._rename_input.rect
+                self._rename_input.rect = rename_rect
+                self._rename_input.draw(self.screen, current_time)
+                self._rename_input.rect = saved_rect
+            else:
+                rank = self._best_rank(self.song_names[i])
+                if rank is not None:
+                    r_letter, r_color = rank
+                    r_surf = self._rank_font.render(r_letter, True, r_color)
+                    self.screen.blit(r_surf, r_surf.get_rect(
+                        center=(self._rank_cx, vis_y + self.button_height // 2)
+                    ))
 
         self.screen.set_clip(None)
 
@@ -1661,10 +1725,11 @@ class MenuManager:
         self._video_frame_dur = 1.0 / 30.0
 
         # ── Waiting ("...") screen ────────────────────────────────────────────
-        # Shown once before the intro animation so players have time to get ready.
+        # Auto-advances after 2 seconds.
         self._show_waiting  = (music is not None and music.needs_start)
         self._dots_timer    = 0.0
         self._dots_count    = 1        # start with one dot visible
+        self._waiting_elapsed = 0.0    # total time on waiting screen
         _dots_font_size     = max(48, screen.get_height() // 12)
         self._dots_font     = pygame.font.Font(_FONT, _dots_font_size)
 
@@ -1713,17 +1778,14 @@ class MenuManager:
 
             dt = self.clock.tick(60) / 1000.0
 
-            # ── Waiting ("...") screen ────────────────────────────────────────
+            # ── Waiting ("...") screen — auto-dismisses after 2 seconds ─────
             if self._show_waiting:
-                # Check for any input to start
-                for event in events:
-                    if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
-                        self._show_waiting = False
-                        if self._music:
-                            self._music.start_intro()
-                        break
-
-                if self._show_waiting:
+                self._waiting_elapsed += dt
+                if self._waiting_elapsed >= 2.0:
+                    self._show_waiting = False
+                    if self._music:
+                        self._music.start_intro()
+                else:
                     self.screen.fill((0, 0, 0))
                     self._dots_timer += dt
                     if self._dots_timer >= 0.22:
@@ -1796,7 +1858,8 @@ class MenuManager:
                 # while popup is open: suppress clicks AND hover in the background
                 ls_click  = mouse_clicked and self._level_menu is None
                 ls_mouse  = mouse_pos if self._level_menu is None else (-9999, -9999)
-                action, idx = self.level_select.update(ls_mouse, ls_click, current_time)
+                ls_events = events if self._level_menu is None else []
+                action, idx = self.level_select.update(ls_mouse, ls_click, current_time, ls_events)
                 self.level_select.draw(current_time)
 
                 # ── level detail popup ────────────────────────────────────────
@@ -1817,9 +1880,18 @@ class MenuManager:
                 if action == "back":
                     self._start_transition("title", self.level_select.back_button.rect.center)
                 elif action == "upload":
-                    self.file_upload_screen = FileUploadScreen(self.screen)
-                    origin = self.level_select.upload_rect.center
-                    self._start_transition("upload", origin)
+                    # Pick file immediately — no separate upload screen
+                    fpath = pick_audio_file()
+                    if fpath:
+                        ok, msg = self._handle_upload(fpath, None)
+                        if ok:
+                            self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
+                            self.level_select.begin_rename(0)  # index 0 = newly inserted slot
+                elif action == "rename":
+                    rename_idx, new_name = self.level_select._rename_result
+                    # Update display name in level_select lists
+                    self.level_select._full_names[rename_idx] = new_name
+                    self.level_select.level_buttons[rename_idx].text = new_name
                 elif action == "select":
                     diff_idx = self.level_select.difficulty_selectors[idx].selected
                     _btn     = self.level_select.level_buttons[idx]
