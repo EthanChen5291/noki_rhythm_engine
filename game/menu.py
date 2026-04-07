@@ -799,10 +799,11 @@ class LevelSelect:
         (     1, "D", (210,  90,  90)),   # red
     ]
 
-    def __init__(self, screen, song_names, scores=None):
+    def __init__(self, screen, song_names, scores=None, canon_names=None):
         self.screen     = screen
         self.song_names = song_names
         self._scores    = scores or {}
+        self._canon_set: set[str] = set(canon_names) if canon_names else set(song_names)
         sw, sh = screen.get_size()
 
         self.header_font  = pygame.font.Font(_FONT, 60)
@@ -811,16 +812,21 @@ class LevelSelect:
         self.upload_font1 = pygame.font.Font(_FONT, 96)
         self.upload_font2 = pygame.font.Font(_FONT, 78)
 
-        self.scroll_offset  = 0
         self.button_height  = 56
         self.button_spacing = 22      # more breathing room between rows
-        self.list_top       = 120
+
+        # ── Tab geometry ──────────────────────────────────────────────────
+        self.list_top       = 148     # pushed down to make room for tabs
+        self._tab_font      = pygame.font.Font(_FONT, 32)
+        self._active_tab    = 0       # 0 = Canon, 1 = Custom
+        self._tab_lerp      = 0.0    # 0.0 → tab 0, 1.0 → tab 1 (drives highlight lerp)
+        self._TAB_LERP_SPD  = 8.0    # lerp speed (units/sec)
 
         # ── Scrollbar geometry (right edge of right panel) ───────────────
         self._sb_w      = 6
         self._sb_margin = 12
         self._sb_x      = sw - self._sb_margin - self._sb_w
-        self._sb_y      = self.list_top
+        self._sb_y      = self.list_top  # updated after list_top is set above
         self._sb_h      = sh - self.list_top - 20
         self._sb_drag   = False
         self._sb_drag_start_y      = 0
@@ -914,6 +920,10 @@ class LevelSelect:
         self.level_buttons:        list[Button]             = []
         self.difficulty_selectors: list[DifficultySelector] = []
 
+        # parallel lists of per-song_names index, one per tab
+        # _tab_indices[t] = list of indices into song_names for that tab
+        self._tab_indices: list[list[int]] = [[], []]  # [0]=canon, [1]=custom
+
         for i, name in enumerate(song_names):
             display = os.path.splitext(name)[0]
             self._full_names.append(display)
@@ -925,6 +935,11 @@ class LevelSelect:
             self.difficulty_selectors.append(
                 DifficultySelector(self._rank_cx, btn_y + self.button_height // 2, self.diff_font)
             )
+            tab = 0 if name in self._canon_set else 1
+            self._tab_indices[tab].append(i)
+
+        # Now _tab_indices is complete — compute per-tab max scrolls
+        self._recompute_max_scrolls(sh)
 
         # inline rename state (set by begin_rename after upload)
         self._rename_idx: int | None = None
@@ -933,7 +948,7 @@ class LevelSelect:
         self._rename_font = pygame.font.Font(_FONT, 42)   # matches button_font
 
         # rename push animation — songs below the new slot lerp down then back up
-        _RENAME_PUSH_AMOUNT    = self.button_height + self.button_spacing
+        _RENAME_PUSH_AMOUNT    = (self.button_height + self.button_spacing) * 0.75
         self._rename_push_px   = _RENAME_PUSH_AMOUNT   # pixels to push songs below
         self._rename_push_t    = 0.0    # 0 = normal, 1 = fully pushed
         self._rename_push_dir  = 0      # +1 opening, -1 closing
@@ -942,8 +957,50 @@ class LevelSelect:
 
         _btn_sz = 52
         self.back_button = ImageButton(30 + _btn_sz // 2, 30 + _btn_sz // 2, _btn_sz, _EXIT_IMG)
-        total = len(song_names) * (self.button_height + self.button_spacing)
-        self.max_scroll = max(0, total - (sh - self.list_top - 40))
+        self._scroll_offsets  = [0, 0]   # per-tab scroll
+        self._max_scrolls     = [0, 0]   # filled by _recompute_max_scrolls after _tab_indices built
+
+        # ── Tab geometry (built after div_x is known) ────────────────────
+        # Tabs sit in the right panel header area
+        tab_panel_x = div_x + 1
+        tab_panel_w = sw - tab_panel_x
+        self._tab_labels    = ["Canon", "Custom"]
+        self._tab_rects: list[pygame.Rect] = []
+        _tab_h   = 42
+        _tab_top = 14
+        _tab_w   = min(130, tab_panel_w // 3)
+        for t in range(2):
+            self._tab_rects.append(pygame.Rect(
+                tab_panel_x + 20 + t * (_tab_w + 6),
+                _tab_top, _tab_w, _tab_h,
+            ))
+
+    # ── per-tab scroll helpers ────────────────────────────────────────────
+
+    def _recompute_max_scrolls(self, sh=None):
+        if sh is None:
+            sh = self.screen.get_height()
+        viewport = sh - self.list_top - 40
+        self._max_scrolls = [
+            max(0, len(self._tab_indices[t]) * (self.button_height + self.button_spacing) - viewport)
+            for t in range(2)
+        ]
+
+    @property
+    def max_scroll(self) -> int:
+        return self._max_scrolls[self._active_tab]
+
+    @property
+    def scroll_offset(self) -> int:
+        return self._scroll_offsets[self._active_tab]
+
+    @scroll_offset.setter
+    def scroll_offset(self, v: int):
+        self._scroll_offsets[self._active_tab] = max(0, min(v, self._max_scrolls[self._active_tab]))
+
+    def switch_tab(self, tab: int):
+        if tab != self._active_tab:
+            self._active_tab = tab
 
     def begin_rename(self, idx: int):
         """Start an inline rename for the slot at idx and animate songs below downward."""
@@ -992,30 +1049,27 @@ class LevelSelect:
     def handle_scroll(self, event):
         if event.type == pygame.MOUSEWHEEL:
             self.scroll_offset -= event.y * 30
-            self.scroll_offset  = max(0, min(self.scroll_offset, self.max_scroll))
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self._sb_drag = False
         elif event.type == pygame.MOUSEMOTION and self._sb_drag:
             dy = event.pos[1] - self._sb_drag_start_y
-            if self._sb_h > 0 and self.max_scroll > 0:
+            ms = self.max_scroll
+            if self._sb_h > 0 and ms > 0:
                 self.scroll_offset = self._sb_drag_start_offset + int(
-                    dy * 0.9 * self.max_scroll / self._sb_h
+                    dy * 0.9 * ms / self._sb_h
                 )
-            self.scroll_offset = max(0, min(self.scroll_offset, self.max_scroll))
 
     def _sb_thumb_rect(self) -> pygame.Rect | None:
-        """Return the scrollbar thumb rect, or None if scrollbar isn't needed."""
-        if self.max_scroll <= 0:
+        ms = self.max_scroll
+        if ms <= 0:
             return None
-        total_rows = len(self.level_buttons)
-        if total_rows == 0:
+        n = len(self._tab_indices[self._active_tab])
+        if n == 0:
             return None
         viewport_h = self._sb_h
-        total_h    = total_rows * (self.button_height + self.button_spacing)
+        total_h    = n * (self.button_height + self.button_spacing)
         thumb_h    = max(24, int(viewport_h * viewport_h / total_h))
-        thumb_y    = self._sb_y + int(
-            (viewport_h - thumb_h) * self.scroll_offset / self.max_scroll
-        )
+        thumb_y    = self._sb_y + int((viewport_h - thumb_h) * self.scroll_offset / ms)
         return pygame.Rect(self._sb_x, thumb_y, self._sb_w, thumb_h)
 
     def update(self, mouse_pos, mouse_clicked, _current_time, events=None):
@@ -1047,12 +1101,19 @@ class LevelSelect:
         if self.back_button.update(mouse_pos, mouse_clicked):
             return "back", -1
 
+        # ── Tab clicks ───────────────────────────────────────────────────
+        if mouse_clicked:
+            for t, tr in enumerate(self._tab_rects):
+                if tr.collidepoint(mouse_pos):
+                    self.switch_tab(t)
+
         self._upload_hovered = self.upload_rect.collidepoint(mouse_pos)
         if mouse_clicked and self._upload_hovered:
             return "upload", -1
 
         # Scrollbar click / drag start
-        if mouse_clicked and self.max_scroll > 0:
+        ms = self.max_scroll
+        if mouse_clicked and ms > 0:
             thumb = self._sb_thumb_rect()
             if thumb and thumb.collidepoint(mouse_pos):
                 self._sb_drag = True
@@ -1061,16 +1122,20 @@ class LevelSelect:
             else:
                 track = pygame.Rect(self._sb_x, self._sb_y, self._sb_w, self._sb_h)
                 if track.collidepoint(mouse_pos):
-                    # Click on track: jump
                     t = (mouse_pos[1] - self._sb_y) / self._sb_h
-                    self.scroll_offset = int(t * self.max_scroll)
-                    self.scroll_offset = max(0, min(self.scroll_offset, self.max_scroll))
+                    self.scroll_offset = int(t * ms)
 
-        adj = (mouse_pos[0], mouse_pos[1] + self.scroll_offset)
-        for i, btn in enumerate(self.level_buttons):
-            btn.check_hover(adj)
-            if btn.check_click(adj, mouse_clicked):
-                return "select", i
+        # Hit-test active-tab buttons using their tab-row vis_y
+        row_h = self.button_height + self.button_spacing
+        for row, song_i in enumerate(self._tab_indices[self._active_tab]):
+            btn = self.level_buttons[song_i]
+            row_y = self.list_top + row * row_h - self.scroll_offset
+            btn_rect = pygame.Rect(btn.rect.x, row_y, btn.rect.w, btn.rect.h)
+            hovered = btn_rect.collidepoint(mouse_pos)
+            btn.is_hovered = hovered
+            btn._target_scale = 1.08 if hovered else 1.0
+            if hovered and mouse_clicked:
+                return "select", song_i
 
         # ── advance all PNG sequences ────────────────────────────────────
         self._noki_loop_seq.advance(1.0 / 60.0)
@@ -1155,10 +1220,26 @@ class LevelSelect:
                                _noki_y + self._eye_oy)
                 ))
 
-        # Right panel header
-        right_cx = div_x + (sw - div_x) // 2
-        hdr = self.header_font.render("SONGS", True, (255, 255, 255))
-        self.screen.blit(hdr, hdr.get_rect(center=(right_cx, 68)))
+        # ── Tab lerp ─────────────────────────────────────────────────────
+        target_lerp = float(self._active_tab)
+        self._tab_lerp += (target_lerp - self._tab_lerp) * min(1.0, self._TAB_LERP_SPD / 60.0)
+
+        # ── Chrome tabs ──────────────────────────────────────────────────
+        for t, (tr, label) in enumerate(zip(self._tab_rects, self._tab_labels)):
+            # highlight amount: 1.0 for active, 0.0 for inactive, smoothly lerped
+            if t == 0:
+                hi = 1.0 - self._tab_lerp
+            else:
+                hi = self._tab_lerp
+            bg_r = int(18 + 38 * hi)
+            bg_col = (bg_r, bg_r, bg_r + 8)
+            # chrome tab shape: rounded top corners, open bottom
+            pygame.draw.rect(self.screen, bg_col, tr, border_radius=8)
+            bord_col = (int(60 + 120 * hi),) * 3
+            pygame.draw.rect(self.screen, bord_col, tr, 1, border_radius=8)
+            txt_col = (int(180 + 75 * hi),) * 3
+            ts = self._tab_font.render(label, True, txt_col)
+            self.screen.blit(ts, ts.get_rect(center=tr.center))
 
         # ── advance rename push animation ────────────────────────────────
         if self._rename_push_dir != 0:
@@ -1181,10 +1262,13 @@ class LevelSelect:
 
         _push_offset = int(self._rename_push_px * self._rename_push_t)
         _rename_row  = self._rename_idx if self._rename_idx is not None else -1
+        _row_h       = self.button_height + self.button_spacing
+        _active_indices = self._tab_indices[self._active_tab]
 
-        for i, btn in enumerate(self.level_buttons):
+        for row, i in enumerate(_active_indices):
+            btn   = self.level_buttons[i]
             extra = _push_offset if i > _rename_row else 0
-            vis_y = btn.rect.y - self.scroll_offset + extra
+            vis_y = self.list_top + row * _row_h - self.scroll_offset + extra
 
             # ── hover glow ──────────────────────────────────────────────
             btn._scale += (btn._target_scale - btn._scale) * 0.18
@@ -1743,8 +1827,10 @@ class MenuManager:
         self._level_menu: LevelMenu | None = None
         self._pending_difficulty: str | None = None
 
+        self._canon_names       = list(song_names)   # snapshot of original canon set
         self.title_screen       = TitleScreen(screen)
-        self.level_select       = LevelSelect(screen, song_names, self._scores)
+        self.level_select       = LevelSelect(screen, song_names, self._scores,
+                                              canon_names=self._canon_names)
         self.file_upload_screen = FileUploadScreen(screen)
         if start_state != "title":
             self.title_screen.reset()
@@ -1931,11 +2017,13 @@ class MenuManager:
                     if fpath:
                         ok, msg = self._handle_upload(fpath, None)
                         if ok:
-                            self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
-                            self.level_select.begin_rename(0)  # index 0 = newly inserted slot
+                            self.level_select = LevelSelect(self.screen, self.song_names,
+                                                            self._scores, self._canon_names)
+                            self.level_select.switch_tab(1)   # jump to Custom tab
+                            self.level_select.begin_rename(0)
                 elif action == "cancel_upload":
-                    # Escape during rename — remove the slot from all lists in-place
-                    # so the close animation can still play on the existing LevelSelect
+                    # Escape during rename — remove the slot in-place so the close
+                    # animation plays on the existing LevelSelect without a rebuild flicker.
                     cancel_idx = idx
                     if 0 <= cancel_idx < len(self.song_names):
                         removed = self.song_names.pop(cancel_idx)
@@ -1945,6 +2033,12 @@ class MenuManager:
                             ls.level_buttons.pop(cancel_idx)
                             ls.difficulty_selectors.pop(cancel_idx)
                             ls._full_names.pop(cancel_idx)
+                        # Rebuild tab_indices and max_scrolls without the removed slot
+                        ls._tab_indices = [[], []]
+                        for j, name in enumerate(self.song_names):
+                            t = 0 if name in ls._canon_set else 1
+                            ls._tab_indices[t].append(j)
+                        ls._recompute_max_scrolls()
                 elif action == "rename":
                     rename_idx, new_name = self.level_select._rename_result
                     # Update display name in level_select lists
@@ -1970,7 +2064,8 @@ class MenuManager:
                 elif action == "upload":
                     ok, msg = self._handle_upload(fpath, words)
                     if ok:
-                        self.level_select = LevelSelect(self.screen, self.song_names, self._scores)
+                        self.level_select = LevelSelect(self.screen, self.song_names,
+                                                        self._scores, self._canon_names)
                         self.state = "level_select"
                     else:
                         self.file_upload_screen.show_error(msg)
@@ -1999,8 +2094,10 @@ class MenuManager:
             dest_path = os.path.join(dest_dir, filename)
             if not os.path.exists(dest_path):
                 shutil.copy2(file_path, dest_path)
-            if filename not in self.song_names:
-                self.song_names.insert(0, filename)
+            # Always move/insert to index 0 so begin_rename(0) targets the right slot
+            if filename in self.song_names:
+                self.song_names.remove(filename)
+            self.song_names.insert(0, filename)
             # persist word bank
             self.song_word_banks[filename] = word_bank if word_bank is not None else DEFAULT_WORD_BANK[:]
             _save_word_banks(self.song_word_banks)

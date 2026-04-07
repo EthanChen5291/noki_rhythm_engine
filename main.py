@@ -26,11 +26,11 @@ from game.music import MusicManager
 
 # cat hurt animation (red outline)
 # upload file should not open separate menu -> should just grab file, and when file is grabbed, user can rename on the level screen
-# levels menu split between ("Canon") and ("Custom") at the top (where the SONGS text is) -> Canon is the default level list, Custom is uploaded
+
 
 # HOLD NOTES -> allow some notes to be held. should be snapped to music grid, 
-# not interfere with the next note, has a cooldown of 0.2 sec before next. 
-# can be at any letter of a sentence for any duration as long as it doesn't interfere
+# not interfere with the next note, has same limitations for spacing as the other ones. user needs to hold the entire duration (with a small grace lenient at the end for when they release)
+# can be at any letter of a sentence for any duration as long as it doesn't interfere, and should notably be included wherever the audio amplitudes stay basically the same (like if a singer is holding a note then we'd do hold note. don't force it though, only do it upon detection of these long notes but can also add shorter hold notes depending on how long the note is held)
 
 # DOUBLE TIMELINE mode timeline splits into two. has 1 second animation of the timeline splitting into two vertically (where one goes up and one goes down) so their vertical center was where the (default mode timeline was). there should be no notes for one measure during entrance just like dual mode
 # - first timeline supports left side of keyboard, second timeline right side

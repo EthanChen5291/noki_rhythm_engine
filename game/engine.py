@@ -265,6 +265,28 @@ class Game:
         self.pace_bias         = 0.85 + self.pace_profile.pace_score * 1.3
         self.scroll_speed      = self.base_scroll_speed * self.pace_bias
 
+        # --- end-of-song deceleration ---
+        self._outro_active     = False
+        self._outro_start_time = 0.0
+        self._outro_dur        = 3.0      # seconds to coast to a stop
+        self._outro_start_spd  = 0.0     # scroll speed captured at outro start
+
+        # Detect trailing silence: find the last beat_time where inter-beat gaps
+        # suddenly grow much larger than average — that's where the music goes quiet.
+        # Store as song_time (without lead_in) so we can compare against current_time.
+        _silence_start = self.song.duration  # default: no early silence
+        _bt = self.song.beat_times
+        if len(_bt) > 8:
+            _avg_gap = (_bt[-1] - _bt[0]) / max(1, len(_bt) - 1)
+            for _bi in range(len(_bt) - 1, 0, -1):
+                if (_bt[_bi] - _bt[_bi - 1]) > _avg_gap * 2.5:
+                    _silence_start = _bt[_bi - 1]
+                    break
+        # Only use silence trigger if it leaves at least 2s before song end
+        if self.song.duration - _silence_start < 2.0:
+            _silence_start = self.song.duration
+        self._silence_start = _silence_start  # song_time (no lead_in)
+
         # --- bounce mode
         self.bounce_events: list[BounceEvent] = []
         self.bounce_active: bool = False
@@ -898,13 +920,30 @@ class Game:
             pause_requested = True
 
         self.input.update(events=events)
-        
+
         self.rhythm.update()
-        
-        if self.rhythm.is_finished():
-            self.show_message("Congratulations!", 5)
-            self._exit_to_menu = True
-            self.running = False
+
+        # ── end-of-song outro deceleration ───────────────────────────────
+        song_time_now = current_time - self.rhythm.lead_in
+        _trigger_outro = (self.rhythm.is_finished()
+                          or song_time_now >= self._silence_start)
+        if _trigger_outro:
+            if not self._outro_active:
+                self._outro_active     = True
+                self._outro_start_time = current_time
+                self._outro_start_spd  = self.scroll_speed
+            outro_elapsed = current_time - self._outro_start_time
+            # cubic ease-out deceleration
+            t    = min(1.0, outro_elapsed / self._outro_dur)
+            ease = 1.0 - (1.0 - t) ** 3
+            self.scroll_speed = max(0.0, self._outro_start_spd * (1.0 - ease))
+            if outro_elapsed >= self._outro_dur:
+                self.show_message("Congratulations!", 5)
+                self._exit_to_menu = True
+                self.running = False
+                return
+            # render timeline (still scrolling, just slowing) but skip input
+            self.render_timeline()
             return
         
         current_char_idx = self.rhythm.char_event_idx
