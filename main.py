@@ -8,6 +8,21 @@ from game.music import MusicManager
 # and move the horizontal line in which song names and stuff begin disappearing after scrolling down to the new point (where the bottom of canon/custom tab is)
 # when scrolling back up and it reaches near the top, it begins lerp stretching again to reverse
 
+# loading animation shouldn't completely stop when reaching the top -> only reach a pretty slow speed
+
+# moreover make the impulse 20% more colored so that the pink, blue, and yellow (new one) colored ones that alternate between are more noticeable.
+
+# pressing slightly early/late on the hold note (but still in the grace period) causes the entire note to relocate -> this shouldnt happen, the end should stay fixed
+# also, make the particles cover a larger area (like go further from the hitmarker in all directions) so it's more noticeable
+
+#holding very long hold notes are being cutt off before they reach the end of the note (like it automatically cancels the note even though the graphic shows that there's more to hold) and then counts it as a wrong note. this shouldnt happen
+
+# make screen "hits" where camera beats every other beat
+
+# recreate speedup/slowdown/bounce mode/dual mode art
+
+# speed up + bounce mode causes the timeline to go in the opposite direction (like timeline is going left and particles are coming from right)
+
 # when in bounce mode and going in reverse, extend the timeline all the way to the left so they can see dots earlier before it comes
 
 # move progression bar to the top

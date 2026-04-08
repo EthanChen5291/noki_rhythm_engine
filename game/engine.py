@@ -556,7 +556,7 @@ class Game:
                 'vx': _rnd.uniform(-55, 55),
                 'vy': _rnd.uniform(-70, 20),
                 'alpha': 220.0,
-                'radius': _rnd.uniform(2.5, 5.0),
+                'radius': _rnd.uniform(3.75, 7.5),   # 50% larger
                 'color': (255, 210, 60),
             })
         for _ in range(3):
@@ -566,7 +566,7 @@ class Game:
                 'vx': _rnd.uniform(-110, 110),
                 'vy': _rnd.uniform(-130, 30),
                 'alpha': 190.0,
-                'radius': _rnd.uniform(1.0, 2.2),
+                'radius': _rnd.uniform(1.5, 3.3),    # 50% larger
                 'color': (240, 240, 255),
             })
 
@@ -1679,7 +1679,7 @@ class Game:
                                 'vx': _rnd.uniform(-55, 55),
                                 'vy': _rnd.uniform(-70, 20),
                                 'alpha': 220.0,
-                                'radius': _rnd.uniform(2.5, 5.0),
+                                'radius': _rnd.uniform(3.75, 7.5),   # 50% larger
                                 'color': (255, 210, 60),
                             })
                         # White particles — smaller, faster, travel further
@@ -1690,7 +1690,7 @@ class Game:
                                 'vx': _rnd.uniform(-110, 110),
                                 'vy': _rnd.uniform(-130, 30),
                                 'alpha': 190.0,
-                                'radius': _rnd.uniform(1.0, 2.2),
+                                'radius': _rnd.uniform(1.5, 3.3),    # 50% larger
                                 'color': (240, 240, 255),
                             })
                     continue  # don't draw the circle head again

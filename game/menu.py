@@ -400,13 +400,19 @@ class DifficultySelector:
         (220, 200, 70),
         (220, 85,  85),
     ]
+    _LERP_SPD = 0.22   # per-frame lerp toward target (0 = instant, 1 = never)
 
     def __init__(self, center_x, center_y, font):
         self.cx, self.cy = center_x, center_y
         self.font        = font
         self.selected    = 1
 
-        self._slide_offset = 0.0
+        # slide_offset: pixels the current label is displaced from center.
+        # Positive = incoming from right, negative = incoming from left.
+        self._slide_offset  = 0.0
+        self._prev_label: str | None  = None  # label sliding out
+        self._prev_color: tuple | None = None
+        self._prev_offset   = 0.0            # where the outgoing label is sliding to
         self._left_rect:  pygame.Rect | None = None
         self._right_rect: pygame.Rect | None = None
 
@@ -419,16 +425,24 @@ class DifficultySelector:
     def check_hover(self, _pos):
         pass
 
+    def _go(self, direction: int):
+        """Advance selection by +1 (right) or -1 (left), wrapping at ends."""
+        n = len(self.LABELS)
+        self._prev_label  = self.LABELS[self.selected]
+        self._prev_color  = self.COLORS[self.selected]
+        self._prev_offset = 0.0
+        self.selected = (self.selected + direction) % n
+        # incoming label starts off-screen in the opposite direction
+        self._slide_offset = -direction * self._max_label_w * 1.1
+
     def check_click(self, mouse_pos, mouse_clicked) -> bool:
         if not mouse_clicked:
             return False
-        if self._left_rect and self._left_rect.collidepoint(mouse_pos) and self.selected > 0:
-            self.selected      -= 1
-            self._slide_offset  = -self._max_label_w * 0.9
+        if self._left_rect and self._left_rect.collidepoint(mouse_pos):
+            self._go(-1)
             return True
-        if self._right_rect and self._right_rect.collidepoint(mouse_pos) and self.selected < 2:
-            self.selected      += 1
-            self._slide_offset  = self._max_label_w * 0.9
+        if self._right_rect and self._right_rect.collidepoint(mouse_pos):
+            self._go(1)
             return True
         return False
 
@@ -442,36 +456,22 @@ class DifficultySelector:
         pygame.draw.polygon(screen, color, pts)
 
     def draw(self, screen, _current_time, y_offset=0):
-        self._slide_offset += (0.0 - self._slide_offset) * 0.20
+        spd = self._LERP_SPD
+        self._slide_offset += (0.0 - self._slide_offset) * spd
         if abs(self._slide_offset) < 0.5:
             self._slide_offset = 0.0
 
+        # Outgoing label slides further away
+        if self._prev_label is not None:
+            # direction it's moving: opposite of incoming
+            sign = 1 if self._prev_offset <= 0 else -1
+            target_prev = sign * self._max_label_w * 1.1
+            self._prev_offset += (target_prev - self._prev_offset) * spd
+            if abs(self._prev_offset - target_prev) < 1.0:
+                self._prev_label = None  # done sliding out
+
         eff_cy = self.cy - y_offset
-        label  = self.LABELS[self.selected]
-        color  = self.COLORS[self.selected]
-        text_surf = self.font.render(label, True, color)
-        tw, th    = text_surf.get_size()
-
-        arrow_color = (160, 160, 160)
-        arrow_gap   = 12
-        aw, ah      = 11, 16
-
-        label_left  = self.cx - self._max_label_w // 2
-        label_right = self.cx + self._max_label_w // 2
-
-        if self.selected > 0:
-            tip_cx = label_left - arrow_gap - aw // 2
-            self._draw_arrow(screen, arrow_color, tip_cx, eff_cy, 'left', aw, ah)
-            self._left_rect = pygame.Rect(tip_cx - aw - 4, eff_cy - ah // 2 - 4, aw * 2 + 8, ah + 8)
-        else:
-            self._left_rect = None
-
-        if self.selected < 2:
-            tip_cx = label_right + arrow_gap + aw // 2
-            self._draw_arrow(screen, arrow_color, tip_cx, eff_cy, 'right', aw, ah)
-            self._right_rect = pygame.Rect(tip_cx - aw - 4, eff_cy - ah // 2 - 4, aw * 2 + 8, ah + 8)
-        else:
-            self._right_rect = None
+        th = self.font.get_height()
 
         clip_rect = pygame.Rect(
             int(self.cx - self._max_label_w // 2), int(eff_cy - th // 2 - 2),
@@ -479,8 +479,36 @@ class DifficultySelector:
         )
         old_clip = screen.get_clip()
         screen.set_clip(clip_rect)
+
+        # Draw outgoing label
+        if self._prev_label is not None:
+            prev_surf = self.font.render(self._prev_label, True, self._prev_color)
+            ptw = prev_surf.get_width()
+            screen.blit(prev_surf, (int(self.cx + self._prev_offset - ptw // 2), int(eff_cy - th // 2)))
+
+        # Draw incoming (current) label
+        label = self.LABELS[self.selected]
+        color = self.COLORS[self.selected]
+        text_surf = self.font.render(label, True, color)
+        tw = text_surf.get_width()
         screen.blit(text_surf, (int(self.cx + self._slide_offset - tw // 2), int(eff_cy - th // 2)))
+
         screen.set_clip(old_clip)
+
+        arrow_color = (160, 160, 160)
+        arrow_gap   = 12
+        aw, ah      = 11, 16
+        label_left  = self.cx - self._max_label_w // 2
+        label_right = self.cx + self._max_label_w // 2
+
+        # Always show both arrows (wrap)
+        tip_cx = label_left - arrow_gap - aw // 2
+        self._draw_arrow(screen, arrow_color, tip_cx, eff_cy, 'left', aw, ah)
+        self._left_rect = pygame.Rect(tip_cx - aw - 4, eff_cy - ah // 2 - 4, aw * 2 + 8, ah + 8)
+
+        tip_cx = label_right + arrow_gap + aw // 2
+        self._draw_arrow(screen, arrow_color, tip_cx, eff_cy, 'right', aw, ah)
+        self._right_rect = pygame.Rect(tip_cx - aw - 4, eff_cy - ah // 2 - 4, aw * 2 + 8, ah + 8)
 
 
 # ─── Image button (hover scale + click shrink→bounce) ────────────────────────
