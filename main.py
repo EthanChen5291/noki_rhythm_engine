@@ -1,7 +1,8 @@
 import pygame
 from game.engine import Game
 from game.models import Level
-from game.menu import MenuManager, _load_scores, _save_scores
+from game.menu import MenuManager
+from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
 # when scrolling down, begin lerp cropping the bottom of canon / custom tab up by up to 10% (not moving it all, just taking 3% off the bottom and adjusting text as needed)
