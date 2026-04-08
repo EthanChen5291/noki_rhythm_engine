@@ -8,7 +8,8 @@
     "master": 81400
   },
   "Scorpion.mp3": {
-    "classic": 103400
+    "classic": 103400,
+    "master": 74240
   },
   "Catch Catch.mp3": {
     "classic": 73216,
@@ -21,23 +22,25 @@
     "classic": 55272
   },
   "Decisive Battle.mp3": {
-    "master": 44341
+    "master": 69771
   },
   "ICARIUS.mp3": {
     "classic": 63000,
-    "master": 99769
+    "master": 99769,
+    "journey": 19158
   },
   "tidalwave.mp3": {
-    "master": 117400
+    "master": 144850,
+    "classic": 31394
   },
   "Toby Fox - Finale.mp3": {
-    "master": 46150
+    "master": 53280
   },
   "Chaos Construct.mp3": {
     "master": 28350
   },
   "Glitch in your Heart.mp3": {
-    "master": 99500
+    "master": 109687
   },
   "what is love?.mp3": {
     "master": 110490,

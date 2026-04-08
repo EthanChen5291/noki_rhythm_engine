@@ -96,10 +96,10 @@ class RhythmManager:
 
         elapsed = time.perf_counter() - self.start_time
 
-        # Auto-complete a hold only when the full visual duration has elapsed
+        # Auto-complete a hold only when the fixed musical end time has elapsed
         if self._active_hold is not None:
-            held_secs = elapsed - self._hold_press_time
-            if held_secs >= self._active_hold.hold_duration:
+            hold_end_time = self._active_hold.timestamp + self._active_hold.hold_duration
+            if elapsed >= hold_end_time:
                 self._complete_hold(self._hold_judgment)
             return  # while holding, don't advance past the hold note
 
@@ -195,10 +195,10 @@ class RhythmManager:
             return {}
 
         elapsed = time.perf_counter() - self.start_time
-        held_secs = elapsed - self._hold_press_time
-        required = self._active_hold.hold_duration * (1.0 - self._hold_release_grace)
+        hold_end_time = self._active_hold.timestamp + self._active_hold.hold_duration
+        required_time = hold_end_time - self._active_hold.hold_duration * self._hold_release_grace
 
-        if held_secs >= required:
+        if elapsed >= required_time:
             return self._complete_hold(self._hold_judgment)
         else:
             # Released too early — miss

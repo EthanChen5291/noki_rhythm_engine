@@ -12,10 +12,13 @@ from game.music import MusicManager
 
 # moreover make the impulse 20% more colored so that the pink, blue, and yellow (new one) colored ones that alternate between are more noticeable.
 
-# pressing slightly early/late on the hold note (but still in the grace period) causes the entire note to relocate -> this shouldnt happen, the end should stay fixed
-# also, make the particles cover a larger area (like go further from the hitmarker in all directions) so it's more noticeable
-
 #holding very long hold notes are being cutt off before they reach the end of the note (like it automatically cancels the note even though the graphic shows that there's more to hold) and then counts it as a wrong note. this shouldnt happen
+
+# end animation
+
+# rainbow bubble themed particles / outline on balls during some time?
+
+# dual mode -> speed up or notes shows up at the end on the left and teleports to the right because dual mode ends.
 
 # make screen "hits" where camera beats every other beat
 

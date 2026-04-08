@@ -551,22 +551,22 @@ class Game:
         import random as _rnd
         for _ in range(2):
             self._hold_particles.append({
-                'x': float(x) + _rnd.uniform(-6, 6),
-                'y': float(y) + _rnd.uniform(-8, 8),
-                'vx': _rnd.uniform(-55, 55),
-                'vy': _rnd.uniform(-70, 20),
+                'x': float(x) + _rnd.uniform(-12, 12),
+                'y': float(y) + _rnd.uniform(-14, 14),
+                'vx': _rnd.uniform(-130, 130),
+                'vy': _rnd.uniform(-160, 40),
                 'alpha': 220.0,
-                'radius': _rnd.uniform(3.75, 7.5),   # 50% larger
+                'radius': _rnd.uniform(3.75, 7.5),
                 'color': (255, 210, 60),
             })
         for _ in range(3):
             self._hold_particles.append({
-                'x': float(x) + _rnd.uniform(-4, 4),
-                'y': float(y) + _rnd.uniform(-6, 6),
-                'vx': _rnd.uniform(-110, 110),
-                'vy': _rnd.uniform(-130, 30),
+                'x': float(x) + _rnd.uniform(-10, 10),
+                'y': float(y) + _rnd.uniform(-12, 12),
+                'vx': _rnd.uniform(-220, 220),
+                'vy': _rnd.uniform(-260, 60),
                 'alpha': 190.0,
-                'radius': _rnd.uniform(1.5, 3.3),    # 50% larger
+                'radius': _rnd.uniform(1.5, 3.3),
                 'color': (240, 240, 255),
             })
 
@@ -574,14 +574,14 @@ class Game:
         """Spawn the bubble-style 3-layer hit burst at (x, y)."""
         import random as _rnd
         NOTE_R = 14 * 0.6 * 0.6 * 1.1   # 40% smaller than original, then +10%
-        # Randomly pick one of three transparent pastel palettes
+        # Randomly pick one of three transparent palettes
         _palette = _rnd.choice([
-            # light blue
-            {'l3': (160, 185, 215), 'l2o': (130, 155, 200), 'l2i': (160, 180, 220), 'l1': (200, 215, 235)},
-            # light pink
-            {'l3': (210, 170, 195), 'l2o': (195, 145, 175), 'l2i': (220, 170, 200), 'l1': (235, 205, 220)},
-            # light purple
-            {'l3': (185, 165, 210), 'l2o': (160, 140, 195), 'l2i': (190, 168, 215), 'l1': (215, 205, 230)},
+            # light blue (20% more saturated)
+            {'l3': (157, 187, 223), 'l2o': (124, 154, 208), 'l2i': (155, 179, 227), 'l1': (197, 215, 239)},
+            # light pink (20% more saturated)
+            {'l3': (214, 166, 196), 'l2o': (200, 140, 176), 'l2i': (225, 165, 201), 'l1': (238, 202, 220)},
+            # light yellow (new)
+            {'l3': (220, 195, 100), 'l2o': (205, 170,  75), 'l2i': (235, 205, 120), 'l1': (248, 232, 165)},
         ])
         self._hit_bursts.append({
             'x': x, 'y': y,
@@ -1620,7 +1620,64 @@ class Game:
         for note_idx, event in enumerate(self.rhythm.beat_map):
             time_until_hit = event.timestamp - current_time
 
-            # --- calculate position
+            # --- Active hold: render unconditionally, outside the visibility window,
+            #     so long holds (> 0.75 s) don't vanish mid-hold.
+            is_active_hold = (self.rhythm._active_hold is event)
+            if is_active_hold and event.hold_duration > 0:
+                note_from_left = False
+                if self.dual_side_active and event.char_idx >= 0:
+                    note_from_left = (event.char_idx % 2 == 1)
+                if self.bounce_active and not self.dual_side_active:
+                    note_reversed = False
+                    for bevt in self.bounce_events:
+                        if bevt.time <= event.timestamp - self.rhythm.lead_in:
+                            note_reversed = not note_reversed
+                        else:
+                            break
+                    note_from_left = note_reversed
+
+                hold_end_time = event.timestamp + event.hold_duration
+                remaining_dur = max(0.0, hold_end_time - current_time)
+                remaining_px  = int(remaining_dur * self.scroll_speed)
+                radius = 14
+                if remaining_px > 0:
+                    tail_surf = pygame.Surface((remaining_px, radius * 2), pygame.SRCALPHA)
+                    pygame.draw.rect(tail_surf, (255, 220, 60, 200),
+                                     (0, 0, remaining_px, radius * 2),
+                                     border_radius=radius)
+                    if note_from_left:
+                        # tail extends to the LEFT of hitmarker
+                        self.screen.blit(tail_surf, (int(hit_marker_x) - remaining_px, timeline_y - radius))
+                    else:
+                        self.screen.blit(tail_surf, (int(hit_marker_x), timeline_y - radius))
+                # Spawn hold particles at the hitmarker
+                if int(time.perf_counter() * 30) % 2 == 0:  # ~15 bursts/sec
+                    import random as _rnd
+                    # Golden particles — larger, shorter range
+                    for _ in range(2):
+                        self._hold_particles.append({
+                            'x': float(hit_marker_x) + _rnd.uniform(-12, 12),
+                            'y': float(timeline_y) + _rnd.uniform(-14, 14),
+                            'vx': _rnd.uniform(-130, 130),
+                            'vy': _rnd.uniform(-160, 40),
+                            'alpha': 220.0,
+                            'radius': _rnd.uniform(3.75, 7.5),
+                            'color': (255, 210, 60),
+                        })
+                    # White particles — smaller, faster, travel further
+                    for _ in range(3):
+                        self._hold_particles.append({
+                            'x': float(hit_marker_x) + _rnd.uniform(-10, 10),
+                            'y': float(timeline_y) + _rnd.uniform(-12, 12),
+                            'vx': _rnd.uniform(-220, 220),
+                            'vy': _rnd.uniform(-260, 60),
+                            'alpha': 190.0,
+                            'radius': _rnd.uniform(1.5, 3.3),
+                            'color': (240, 240, 255),
+                        })
+                continue  # don't draw the circle head again
+
+            # --- calculate position (normal / inactive notes)
 
             if -0.75 < time_until_hit < 5.0:
                 # Skip unhit notes that were in a dual-side section (they'd teleport)
@@ -1648,52 +1705,6 @@ class Game:
                     marker_x = hit_marker_x - (time_until_hit * self.scroll_speed)
                 else:
                     marker_x = hit_marker_x + (time_until_hit * self.scroll_speed)
-
-                is_active_hold = (self.rhythm._active_hold is event)
-
-                # For active holds: the head has passed the hitmarker; draw the
-                # remaining (unheld) tail extending ahead of the hitmarker.
-                if is_active_hold and event.hold_duration > 0:
-                    elapsed_hold = current_time - self.rhythm._hold_press_time
-                    remaining_dur = max(0.0, event.hold_duration - elapsed_hold)
-                    remaining_px  = int(remaining_dur * self.scroll_speed)
-                    radius = 14
-                    if remaining_px > 0:
-                        tail_surf = pygame.Surface((remaining_px, radius * 2), pygame.SRCALPHA)
-                        pygame.draw.rect(tail_surf, (255, 220, 60, 200),
-                                         (0, 0, remaining_px, radius * 2),
-                                         border_radius=radius)
-                        if note_from_left:
-                            # tail extends to the LEFT of hitmarker
-                            self.screen.blit(tail_surf, (int(hit_marker_x) - remaining_px, timeline_y - radius))
-                        else:
-                            self.screen.blit(tail_surf, (int(hit_marker_x), timeline_y - radius))
-                    # Spawn hold particles at the hitmarker
-                    if int(time.perf_counter() * 30) % 2 == 0:  # ~15 bursts/sec
-                        import random as _rnd
-                        # Golden particles — larger, shorter range
-                        for _ in range(2):
-                            self._hold_particles.append({
-                                'x': float(hit_marker_x) + _rnd.uniform(-6, 6),
-                                'y': float(timeline_y) + _rnd.uniform(-8, 8),
-                                'vx': _rnd.uniform(-55, 55),
-                                'vy': _rnd.uniform(-70, 20),
-                                'alpha': 220.0,
-                                'radius': _rnd.uniform(3.75, 7.5),   # 50% larger
-                                'color': (255, 210, 60),
-                            })
-                        # White particles — smaller, faster, travel further
-                        for _ in range(3):
-                            self._hold_particles.append({
-                                'x': float(hit_marker_x) + _rnd.uniform(-4, 4),
-                                'y': float(timeline_y) + _rnd.uniform(-6, 6),
-                                'vx': _rnd.uniform(-110, 110),
-                                'vy': _rnd.uniform(-130, 30),
-                                'alpha': 190.0,
-                                'radius': _rnd.uniform(1.5, 3.3),    # 50% larger
-                                'color': (240, 240, 255),
-                            })
-                    continue  # don't draw the circle head again
 
                 if timeline_start_x <= marker_x <= timeline_end_x:
                     if event.char != "" and not event.hit:
