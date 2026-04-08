@@ -7,6 +7,7 @@ from . import models as M
 
 
 class EffectsMixin:
+    screen: pygame.Surface
 
     def trigger_hurt(self):
         """Queue one playthrough of noki_hurt on top of noki_bop."""

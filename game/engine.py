@@ -1,8 +1,10 @@
 """
 Core Game class — init, run loop, pause, and main update tick.
-Visual effects  → effects.py  (EffectsMixin)
-Game mechanics  → mechanics.py (MechanicsMixin)
-Rendering       → renderer.py  (RendererMixin)
+Visual effects  → effects.py      (EffectsMixin)
+Game mechanics  → mechanics.py    (MechanicsMixin)
+Word rendering  → word_renderer.py     (WordRenderer)
+Timeline render → timeline_renderer.py (TimelineRenderer)
+Note rendering  → note_renderer.py     (NoteRenderer)
 """
 import pygame
 import sys
@@ -27,12 +29,14 @@ from .menu import PauseScreen, Button
 from .menu_utils import _FONT
 from .effects import EffectsMixin
 from .mechanics import MechanicsMixin, BounceEvent
-from .renderer import RendererMixin
+from .word_renderer import WordRenderer
+from .timeline_renderer import TimelineRenderer
+from .note_renderer import NoteRenderer
 
 pygame.init()
 
 
-class Game(EffectsMixin, MechanicsMixin, RendererMixin):
+class Game(EffectsMixin, MechanicsMixin):
     def __init__(self, level, screen=None, clock=None) -> None:
         if screen is not None:
             self.screen = screen
@@ -345,10 +349,44 @@ class Game(EffectsMixin, MechanicsMixin, RendererMixin):
             hover_color=(255, 255, 255),
         )
 
+        # --- renderer managers ---
+        self.word_renderer = WordRenderer(self)
+        self.timeline_renderer = TimelineRenderer(self)
+        self.note_renderer = NoteRenderer(self)
+
         # --- play music ---
         pygame.mixer.init()
         pygame.mixer.music.load(self.song_path)
         pygame.mixer.music.play()
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def show_message(self, txt: str, secs: float) -> None:
+        self.message = txt
+        self.message_duration = secs
+
+    def render_timeline(self) -> None:
+        current_time = time.perf_counter() - self.rhythm.start_time
+
+        self.word_renderer.render(current_time)
+
+        timeline_y = 380
+        if self._timeline_shake_offset > 0.3:
+            timeline_y += int(self._timeline_shake_offset)
+            self._timeline_shake_offset *= -0.5
+        else:
+            self._timeline_shake_offset = 0.0
+
+        timeline_start_x = int(self.timeline_current_start)
+        timeline_end_x = int(self.timeline_current_end)
+        hit_marker_x = self.hit_marker_current_x
+
+        self.timeline_renderer.render(
+            current_time, timeline_y, timeline_start_x, timeline_end_x, hit_marker_x)
+        self.note_renderer.render(
+            current_time, timeline_y, timeline_start_x, timeline_end_x, hit_marker_x)
 
     def run(self):
         """Run the game loop. Returns 'menu' if player exits to menu, None otherwise."""
