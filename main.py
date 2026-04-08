@@ -5,6 +5,8 @@ from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
+# shouldnt be able to press on buttons through the canon/custom menu
+
 # when scrolling down, begin lerp cropping the bottom of canon / custom tab up by up to 10% (not moving it all, just taking 3% off the bottom and adjusting text as needed)
 # and move the horizontal line in which song names and stuff begin disappearing after scrolling down to the new point (where the bottom of canon/custom tab is)
 # when scrolling back up and it reaches near the top, it begins lerp stretching again to reverse

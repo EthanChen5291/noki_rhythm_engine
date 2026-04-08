@@ -69,11 +69,11 @@ class MenuManager:
             os.path.dirname(os.path.dirname(__file__)),
             "assets", "images", "noki_intro.mov",
         )
-        self._video_cap       = None
-        self._video_done      = (music is not None and music.title_ready)
-        self._video_last_surf = None
-        self._video_acc       = 0.0
-        self._video_frame_dur = 1.0 / 30.0
+        self._video_cap        = None
+        self._video_done       = (music is not None and music.title_ready)
+        self._video_last_surf  = None
+        self._video_frame_dur  = 1.0 / 30.0
+        self._video_start_wall: float | None = None   # set on first rendered frame
 
         # ── Waiting ("...") screen ────────────────────────────────────────────
         self._show_waiting  = (music is not None and music.needs_start)
@@ -179,17 +179,23 @@ class MenuManager:
                 # ── Intro video on black background ──────────────────────────
                 if not self._video_done and self._video_cap is not None:
                     import cv2  # type: ignore
-                    self._video_acc += dt
-                    if self._video_acc >= self._video_frame_dur:
-                        frames_to_advance = int(self._video_acc / self._video_frame_dur)
-                        self._video_acc -= frames_to_advance * self._video_frame_dur
-                        # Seek past excess frames instead of decoding every one —
-                        # decoding many large frames per tick causes a visible freeze.
-                        if frames_to_advance > 1:
-                            cur = int(self._video_cap.get(cv2.CAP_PROP_POS_FRAMES))
-                            self._video_cap.set(
-                                cv2.CAP_PROP_POS_FRAMES, cur + frames_to_advance - 1
-                            )
+
+                    # Use wall-clock time so a large first-frame dt (caused by
+                    # slow init) never skips past the end of the video.
+                    now = time.time()
+                    if self._video_start_wall is None:
+                        self._video_start_wall = now
+
+                    elapsed      = now - self._video_start_wall
+                    target_frame = int(elapsed / self._video_frame_dur)
+                    current_frame = int(self._video_cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+                    if target_frame > current_frame:
+                        # Grab (no decode) all frames up to the one we want, then
+                        # do a single full read for the target frame.
+                        for _ in range(target_frame - current_frame - 1):
+                            if not self._video_cap.grab():
+                                break
                         ret, frame = self._video_cap.read()
                         if not ret:
                             self._video_cap.release()
@@ -199,10 +205,8 @@ class MenuManager:
                                 self._music.on_intro_video_done()
                         else:
                             sw2, sh2 = self.screen.get_size()
-                            fh, fw = frame.shape[:2]
+                            fh, fw   = frame.shape[:2]
                             scaled_w = max(1, int(fw * sh2 / fh))
-                            # cv2.resize is far faster than pygame.smoothscale on
-                            # high-resolution source frames.
                             frame_small = cv2.resize(
                                 frame, (scaled_w, sh2), interpolation=cv2.INTER_LINEAR
                             )

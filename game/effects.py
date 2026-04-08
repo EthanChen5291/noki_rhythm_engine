@@ -3,11 +3,29 @@ EffectsMixin — particle effects, shockwaves, and hit bursts for the Game class
 Mixed into Game via multiple inheritance; all methods use `self` freely.
 """
 import pygame
+from typing import Optional, Any
 from . import models as M
 
 
 class EffectsMixin:
     screen: pygame.Surface
+    rhythm: Any  # Or import and use the actual RhythmManager type
+    song: M.Song
+    drop_note_indices: dict[int, int]
+    drops_triggered: set[int]
+    
+    # ── Animation / Asset expected attributes ──
+    _hurt_frames: list[pygame.Surface]
+    _hurt_playing: bool
+    _hurt_frame_idx: float
+    _hurt_fps: float
+    _bop_frames: list[pygame.Surface]
+    _bop_surf: Optional[pygame.Surface]
+
+    # ── Particle/Effect lists ──
+    shockwaves: list[M.Shockwave]
+    _hold_particles: list[dict[str, Any]]
+    _hit_bursts: list[dict[str, Any]]
 
     def trigger_hurt(self):
         """Queue one playthrough of noki_hurt on top of noki_bop."""
