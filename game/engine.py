@@ -78,52 +78,15 @@ class Game(EffectsMixin, MechanicsMixin):
 
         assets_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'images')
 
-        # ── noki_bop: pre-decode all frames ──────────────────────────────
         import cv2 as _cv2
-        _bop_path = os.path.join(assets_path, "noki_bop.mov")
-        _bop_target_h = 300
+        # Match title screen: cat height = 38% of screen (title screen uses 40%).
+        _bop_target_h = max(300, int(screen_height * 0.38))
         self._bop_frames: list[pygame.Surface] = []
         self._bop_fps    = 30.0
         self._bop_native_bpm = 100.0
         self._bop_surf   = None
-
-        _pre_cap = _cv2.VideoCapture(_bop_path)
-        if _pre_cap.isOpened():
-            _fps_raw = _pre_cap.get(_cv2.CAP_PROP_FPS)
-            if _fps_raw > 0:
-                self._bop_fps = _fps_raw
-            while True:
-                _ret, _frm = _pre_cap.read()
-                if not _ret:
-                    break
-                _rgb = _cv2.cvtColor(_frm, _cv2.COLOR_BGR2RGB)
-                _fh, _fw = _rgb.shape[:2]
-                _fw_scaled = int(_fw * _bop_target_h / _fh)
-                _s = pygame.surfarray.make_surface(_rgb.transpose(1, 0, 2))
-                _s = pygame.transform.smoothscale(_s, (_fw_scaled, _bop_target_h))
-                self._bop_frames.append(_s)
-        _pre_cap.release()
-
-        # ── noki_hurt: pre-decode all frames ─────────────────────────────
-        _hurt_path = os.path.join(assets_path, "noki_hurt.mov")
         self._hurt_frames: list[pygame.Surface] = []
         self._hurt_fps: float = 30.0
-        _hurt_cap = _cv2.VideoCapture(_hurt_path)
-        if _hurt_cap.isOpened():
-            _fps_h = _hurt_cap.get(_cv2.CAP_PROP_FPS)
-            if _fps_h > 0:
-                self._hurt_fps = _fps_h
-            while True:
-                _ret, _frm = _hurt_cap.read()
-                if not _ret:
-                    break
-                _rgb = _cv2.cvtColor(_frm, _cv2.COLOR_BGR2RGB)
-                _fh, _fw = _rgb.shape[:2]
-                _fw_scaled = int(_fw * _bop_target_h / _fh)
-                _s = pygame.surfarray.make_surface(_rgb.transpose(1, 0, 2))
-                _s = pygame.transform.smoothscale(_s, (_fw_scaled, _bop_target_h))
-                self._hurt_frames.append(_s)
-        _hurt_cap.release()
 
         self._hurt_playing: bool = False
         self._hurt_frame_idx: float = 0.0
@@ -150,6 +113,16 @@ class Game(EffectsMixin, MechanicsMixin):
             pygame.image.load(os.path.join(assets_path, 'hitmarker.png')).convert_alpha(),
             (_hm_w, _hm_h)
         )
+        self.glowed_hitmarker_img = pygame.transform.smoothscale(
+            pygame.image.load(os.path.join(assets_path, 'glowed_hitmarker.png')).convert_alpha(),
+            (_hm_w, _hm_h)
+        )
+        self.glowed_hitmarker_golden_img = pygame.transform.smoothscale(
+            pygame.image.load(os.path.join(assets_path, 'glowed_hitmarker_golden.png')).convert_alpha(),
+            (_hm_w, _hm_h)
+        )
+        # Glow flash state: elapsed seconds since trigger, -1 = inactive
+        self._glow_press_t: float = -1.0
 
         # Petal spinner images
         _psz = 40
@@ -195,6 +168,36 @@ class Game(EffectsMixin, MechanicsMixin):
 
         _thread = _threading.Thread(target=_worker, daemon=True)
         _thread.start()
+
+        # ── Decode noki_bop / noki_hurt frames while analysis runs in bg ──
+        # cv2.resize on the numpy array before make_surface avoids creating
+        # a full 1920×1500 pygame surface for each frame (~10× faster).
+        def _decode_video_frames(path: str) -> tuple[list[pygame.Surface], float]:
+            frames: list[pygame.Surface] = []
+            fps = 30.0
+            cap = _cv2.VideoCapture(path)
+            if cap.isOpened():
+                _r = cap.get(_cv2.CAP_PROP_FPS)
+                if _r > 0:
+                    fps = _r
+                while True:
+                    ret, frm = cap.read()
+                    if not ret:
+                        break
+                    rgb = _cv2.cvtColor(frm, _cv2.COLOR_BGR2RGB)
+                    fh, fw = rgb.shape[:2]
+                    fw_scaled = max(1, int(fw * _bop_target_h / fh))
+                    rgb_small = _cv2.resize(rgb, (fw_scaled, _bop_target_h),
+                                            interpolation=_cv2.INTER_AREA)
+                    frames.append(pygame.surfarray.make_surface(
+                        rgb_small.transpose(1, 0, 2)))
+            cap.release()
+            return frames, fps
+
+        _bop_path  = os.path.join(assets_path, "noki_bop.mov")
+        _hurt_path = os.path.join(assets_path, "noki_hurt.mov")
+        self._bop_frames,  self._bop_fps  = _decode_video_frames(_bop_path)
+        self._hurt_frames, self._hurt_fps = _decode_video_frames(_hurt_path)
 
         # --- petal spinner loop ---
         _P1 = (60.0 / 45.0) / 0.7
@@ -484,6 +487,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self.update_shockwaves(dt)
         self.update_hold_particles(dt)
         self.update_hit_bursts(dt)
+        self.update_hitmarker_glow(dt)
 
         self.update_cat_animation()
         hurt_surf = self.update_hurt_animation(dt)
@@ -571,10 +575,13 @@ class Game(EffectsMixin, MechanicsMixin):
                     if judgment == 'hold_started':
                         self.show_message("HOLD...", 0.5)
                     elif judgment == 'perfect':
+                        self._glow_press_t = 0.0
                         self.show_message(f"PERFECT! ×{combo}", 0.8)
                     elif judgment == 'good':
+                        self._glow_press_t = 0.0
                         self.show_message(f"Good ×{combo}", 0.8)
                     elif judgment == 'ok':
+                        self._glow_press_t = 0.0
                         self.show_message(f"OK ×{combo}", 0.8)
 
                     self.score = self.rhythm.get_score()

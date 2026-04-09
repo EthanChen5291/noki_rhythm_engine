@@ -1,3 +1,6 @@
+import os
+os.environ['SDL_MOUSE_FOCUS_CLICKTHROUGH'] = '1'
+
 import pygame
 from game.engine import Game
 from game.models import Level
@@ -5,7 +8,12 @@ from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
+
+# for some reason, everything takes longer to load now (end of level delay, opening up program delay, playing level delay) -> why?
+
 # shouldnt be able to press on buttons through the canon/custom menu
+
+# noki_bop slightly lagging in loop?
 
 # when scrolling down, begin lerp cropping the bottom of canon / custom tab up by up to 10% (not moving it all, just taking 3% off the bottom and adjusting text as needed)
 # and move the horizontal line in which song names and stuff begin disappearing after scrolling down to the new point (where the bottom of canon/custom tab is)
@@ -14,8 +22,6 @@ from game.music import MusicManager
 # loading animation shouldn't completely stop when reaching the top -> only reach a pretty slow speed
 
 # moreover make the impulse 20% more colored so that the pink, blue, and yellow (new one) colored ones that alternate between are more noticeable.
-
-#holding very long hold notes are being cutt off before they reach the end of the note (like it automatically cancels the note even though the graphic shows that there's more to hold) and then counts it as a wrong note. this shouldnt happen
 
 # end animation
 
@@ -26,6 +32,8 @@ from game.music import MusicManager
 # make screen "hits" where camera beats every other beat
 
 # recreate speedup/slowdown/bounce mode/dual mode art
+
+#add a settings logo (just make it a circle for now) in the main title screen to the left of the play button (and shift the play button as needed). this setting opens up a curved rectangle box with black bg and white outlines (similar to individual level menu) with a volume bar slider. there should be more space but empty for now (eventually will add)
 
 # speed up + bounce mode causes the timeline to go in the opposite direction (like timeline is going left and particles are coming from right)
 

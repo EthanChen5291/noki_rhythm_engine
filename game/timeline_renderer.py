@@ -127,6 +127,17 @@ class TimelineRenderer:
         _hm_rect = g.hitmarker_img.get_rect(center=(int(hit_marker_x), timeline_y))
         g.screen.blit(g.hitmarker_img, _hm_rect)
 
+        # --- hitmarker glow overlays (press = white flash, hold = persistent golden)
+        _press_a = g._glow_alpha(g._glow_press_t)
+        if _press_a > 0:
+            _glow = g.glowed_hitmarker_img.copy()
+            _glow.fill((255, 255, 255, _press_a), special_flags=pygame.BLEND_RGBA_MULT)
+            g.screen.blit(_glow, _hm_rect)
+        if g.rhythm._active_hold is not None:
+            _glow = g.glowed_hitmarker_golden_img.copy()
+            _glow.fill((255, 255, 255, 178), special_flags=pygame.BLEND_RGBA_MULT)
+            g.screen.blit(_glow, _hm_rect)
+
         # --- beat grid lines
         beat_times = g.song.beat_times
         lead_in = g.rhythm.lead_in

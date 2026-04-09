@@ -92,23 +92,10 @@ class MenuManager:
                         fps = cap.get(cv2.CAP_PROP_FPS)
                         if fps > 0:
                             self._video_frame_dur = 1.0 / fps
-                        # Verify the file is actually decodable by reading the
-                        # first frame; if cv2 can open but not decode the codec
-                        # (common with certain .mov variants) treat as missing.
-                        ret, _ = cap.read()
-                        if ret:
-                            # Rewind so the run-loop plays from frame 1.
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                            self._video_cap = cap
-                            # Video is ready — kick off intro immediately so
-                            # there is no 2-second black waiting screen before
-                            # it plays.
-                            if self._music:
-                                self._music.start_intro()
-                            self._show_waiting = False
-                        else:
-                            cap.release()
-                            self._video_done = True
+                        self._video_cap = cap
+                        if self._music:
+                            self._music.start_intro()
+                        self._show_waiting = False
                     else:
                         self._video_done = True
                 else:

@@ -253,6 +253,31 @@ class EffectsMixin:
 
         self._hit_bursts = surviving
 
+    # ── Hitmarker glow constants ──────────────────────────────────────────────
+    _GLOW_RISE_DUR  = 0.10   # seconds to ease in to peak alpha
+    _GLOW_FALL_DUR  = 0.22   # seconds to fade out from peak alpha
+    _GLOW_PEAK      = 178    # peak alpha (≈ 70% of 255)
+    _GLOW_SCALE     = 1.0    # glow image drawn at same size as hitmarker
+
+    def update_hitmarker_glow(self, dt: float):
+        """Advance glow flash timer for press hitmarker overlay."""
+        total = self._GLOW_RISE_DUR + self._GLOW_FALL_DUR
+        if self._glow_press_t >= 0:
+            self._glow_press_t += dt
+            if self._glow_press_t >= total:
+                self._glow_press_t = -1.0
+
+    def _glow_alpha(self, t: float) -> int:
+        """Map elapsed glow time → alpha (0–255)."""
+        if t < 0:
+            return 0
+        if t < self._GLOW_RISE_DUR:
+            return int(self._GLOW_PEAK * (t / self._GLOW_RISE_DUR) ** 0.5)
+        ft = t - self._GLOW_RISE_DUR
+        if ft < self._GLOW_FALL_DUR:
+            return int(self._GLOW_PEAK * (1.0 - ft / self._GLOW_FALL_DUR))
+        return 0
+
     def render_shockwave(self, wave: M.Shockwave):
         """Render a single shockwave ring."""
         if wave.alpha <= 0 or wave.radius <= 0:
