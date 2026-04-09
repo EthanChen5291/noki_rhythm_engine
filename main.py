@@ -25,6 +25,8 @@ from game.music import MusicManager
 
 # end animation
 
+# support for different time signatures?
+
 # rainbow bubble themed particles / outline on balls during some time?
 
 # dual mode -> speed up or notes shows up at the end on the left and teleports to the right because dual mode ends.
