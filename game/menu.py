@@ -209,7 +209,7 @@ class MenuManager:
 
             if self.state == "title":
                 if _title_ready:
-                    action = self.title_screen.update(mouse_pos, mouse_clicked, current_time)
+                    action = self.title_screen.update(dt, mouse_pos, mouse_clicked, current_time)
                     self.title_screen.draw(current_time)
                     if action == "play":
                         if self._music:
@@ -221,12 +221,12 @@ class MenuManager:
                 ls_click  = mouse_clicked and self._level_menu is None
                 ls_mouse  = mouse_pos if self._level_menu is None else (-9999, -9999)
                 ls_events = events if self._level_menu is None else []
-                action, idx = self.level_select.update(ls_mouse, ls_click, current_time, ls_events)
+                action, idx = self.level_select.update(dt, ls_mouse, ls_click, current_time, ls_events)
                 self.level_select.draw(current_time)
 
                 # ── level detail popup ────────────────────────────────────────
                 if self._level_menu is not None:
-                    lm_action = self._level_menu.update(mouse_pos, mouse_clicked, current_time)
+                    lm_action = self._level_menu.update(dt, mouse_pos, mouse_clicked, current_time)
                     self._level_menu.draw(current_time)
                     if lm_action == "play":
                         self._pending_difficulty = self._level_menu._diff.difficulty
@@ -281,7 +281,7 @@ class MenuManager:
 
             elif self.state == "upload":
                 action, fpath, words = self.file_upload_screen.update(
-                    mouse_pos, mouse_clicked, current_time, events
+                    dt, mouse_pos, mouse_clicked, current_time, events
                 )
                 self.file_upload_screen.draw(current_time)
                 if action == "back":
