@@ -23,6 +23,7 @@ from analysis.audio_analysis import (
     calculate_energy_shifts,
     calculate_scroll_tiers,
     detect_dual_side_sections,
+    detect_climax_shake_beats,
 )
 from . import models as M
 from .menu import PauseScreen, Button
@@ -159,10 +160,12 @@ class Game(EffectsMixin, MechanicsMixin):
                     self.song_path, song.bpm, pace.pace_score, song.beat_times)
                 shifts     = calculate_energy_shifts(
                     self.song_path, song.bpm, pace.pace_score, song.beat_times)
+                shake_beats = detect_climax_shake_beats(
+                    pace.pace_score, song.beat_times, tiers)
                 _result.update(song=song, beat_duration=bdur, pace_profile=pace,
                                dual_side_sections=dual_secs, difficulty_profile=diff_prof,
                                rhythm=rhythm, drop_events=drops, scroll_tiers=tiers,
-                               energy_shifts=shifts)
+                               energy_shifts=shifts, climax_shake_beats=shake_beats)
             except Exception as exc:
                 _errors.append(exc)
 
@@ -265,8 +268,16 @@ class Game(EffectsMixin, MechanicsMixin):
         self.difficulty_profile = _result['difficulty_profile']
         self.rhythm             = _result['rhythm']
         self.drop_events        = _result['drop_events']
-        self.scroll_tiers       = _result['scroll_tiers']
-        self.energy_shifts      = _result['energy_shifts']
+        self.scroll_tiers          = _result['scroll_tiers']
+        self.energy_shifts         = _result['energy_shifts']
+        self._climax_shake_beats   = _result['climax_shake_beats']  # [(song_time, intensity), ...]
+        self._climax_shake_idx     = 0
+
+        # --- screen shake state ---
+        self._shake_x: float            = 0.0
+        self._shake_sequence: list      = []
+        self._shake_seq_idx: int        = 0
+        self._shake_step_elapsed: float = 0.0
 
         self.input = Input()
 
@@ -537,6 +548,13 @@ class Game(EffectsMixin, MechanicsMixin):
             self.render_timeline()
             return
 
+        # ── climax screen-shake beat triggers ────────────────────────────────
+        while (self._climax_shake_idx < len(self._climax_shake_beats)
+               and song_time_now >= self._climax_shake_beats[self._climax_shake_idx][0]):
+            _, _intensity = self._climax_shake_beats[self._climax_shake_idx]
+            self._trigger_screen_shake(_intensity)
+            self._climax_shake_idx += 1
+
         current_char_idx = self.rhythm.char_event_idx
 
         if current_char_idx != self.last_char_idx:
@@ -657,3 +675,10 @@ class Game(EffectsMixin, MechanicsMixin):
         if pause_requested:
             self._enter_pause()
             return
+
+        # ── apply screen shake (copies rendered frame, offsets the whole screen) ──
+        self.update_screen_shake(dt)
+        if abs(self._shake_x) > 0.3:
+            _snap = self.screen.copy()
+            self.screen.fill((0, 0, 0))
+            self.screen.blit(_snap, (int(self._shake_x), 0))

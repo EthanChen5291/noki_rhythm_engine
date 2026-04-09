@@ -1119,12 +1119,62 @@ def detect_shake_sections( #idk if im gonna use this
 # def get_peaks() -> finds onset peaks at every sixteenth note that exceed a certain threshold 
 # (threshold should be calculated based off avg onset difference i think)
 
-# def get_frequencies(raw_sound: , ) -> 
+# def get_frequencies(raw_sound: , ) ->
 # finds audio frequencies and lists the frequencies in terms of sixteenth notes
 # how to normalize frequency ? do we normalize or just categorize (low, medium, high) by raw values?
 
 # i aim to figure out the time slots where words CAN go in the regular beatmap_generator math stuff,
 # then use this stuff to kinda map out WHERE in those time slots i can put chars
 # this constrains the chars to recommended CPS while ensuring musical feel
+
+
+def detect_climax_shake_beats(
+    pace_score: float,
+    aligned_beat_times: list[float],
+    scroll_tiers: list[tuple[float, float, float]],
+) -> list[tuple[float, float]]:
+    """
+    Return (beat_time, intensity_0_to_1) pairs for beats that should trigger
+    a screen shake. Only used for energetic songs (pace_score >= 0.42).
+
+    Uses the already-computed scroll_tiers so no audio re-load is needed.
+    Shakes fire every 2 beats for very energetic songs (pace_score >= 0.62),
+    every 4 beats for moderately energetic ones.
+
+    intensity_0_to_1 encodes how loud the section is relative to the loudest
+    climax section — drives shake magnitude in the renderer.
+    """
+    if pace_score < 0.42 or not aligned_beat_times or not scroll_tiers:
+        return []
+
+    mults = [m for _, _, m in scroll_tiers]
+    if not mults:
+        return []
+
+    min_mult = float(min(mults))
+    max_mult = float(max(mults))
+    mult_range = max_mult - min_mult
+    if mult_range < 1e-6:
+        return []
+
+    # Threshold: sections above the 60th-percentile multiplier get shakes.
+    sorted_mults = sorted(mults)
+    p60 = sorted_mults[max(0, int(len(sorted_mults) * 0.60) - 1)]
+
+    stride = 2 if pace_score >= 0.62 else 4   # beats between shake triggers
+
+    result: list[tuple[float, float]] = []
+    i = 0
+    while i < len(aligned_beat_times):
+        bt = aligned_beat_times[i]
+        for t_start, t_end, mult in scroll_tiers:
+            if t_start <= bt < t_end:
+                if mult >= p60:
+                    intensity = (mult - min_mult) / mult_range   # 0–1
+                    result.append((bt, float(intensity)))
+                break
+        i += stride
+
+    return result
 
 # get silence

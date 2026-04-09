@@ -34,9 +34,7 @@ class NoteRenderer:
             # Active hold: render unconditionally outside visibility window
             is_active_hold = (g.rhythm._active_hold is event)
             if is_active_hold and event.hold_duration > 0:
-                note_from_left = False
-                if g.dual_side_active and event.char_idx >= 0:
-                    note_from_left = (event.char_idx % 2 == 1)
+                note_from_left = event.from_left
                 if g.bounce_active and not g.dual_side_active:
                     note_reversed = False
                     for bevt in g.bounce_events:
@@ -89,9 +87,7 @@ class NoteRenderer:
                 if in_dual_exit_grace and not event.hit and time_until_hit < 0:
                     continue
 
-                note_from_left = False
-                if g.dual_side_active and event.char_idx >= 0:
-                    note_from_left = (event.char_idx % 2 == 1)
+                note_from_left = event.from_left
 
                 if g.bounce_active and not g.dual_side_active:
                     if time_until_hit < 0 and not event.hit:

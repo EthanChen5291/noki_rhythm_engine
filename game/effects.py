@@ -27,6 +27,56 @@ class EffectsMixin:
     _hold_particles: list[dict[str, Any]]
     _hit_bursts: list[dict[str, Any]]
 
+    # ── Screen shake ──
+    _shake_x: float
+    _shake_sequence: list   # list of (target_x: float, step_dur: float)
+    _shake_seq_idx: int
+    _shake_step_elapsed: float
+
+    def _trigger_screen_shake(self, intensity: float) -> None:
+        """Generate an organic left-right shake sequence keyed to intensity (0–1).
+
+        Each call resets the sequence so the shake always stays beat-synced.
+        Sequence: 2–4 alternating directional steps of varying magnitude, then
+        a short return-to-zero step.
+        """
+        import random as _rnd
+
+        mag = 4.0 + intensity * 14.0      # 4–18 px peak displacement
+        n_steps = _rnd.randint(2, 4)
+        direction = _rnd.choice((-1, 1))
+
+        seq: list[tuple[float, float]] = []
+        for k in range(n_steps):
+            step_mag = mag * _rnd.uniform(0.50, 1.00) * (0.82 ** k)
+            step_dur = _rnd.uniform(0.055, 0.100)
+            seq.append((direction * step_mag, step_dur))
+            direction = -direction
+
+        seq.append((0.0, 0.065))          # snap back to centre
+
+        self._shake_sequence = seq
+        self._shake_seq_idx = 0
+        self._shake_step_elapsed = 0.0
+
+    def update_screen_shake(self, dt: float) -> None:
+        """Advance the shake sequence and update _shake_x each frame."""
+        if self._shake_seq_idx >= len(self._shake_sequence):
+            # Dampen residual offset back to zero
+            if abs(self._shake_x) > 0.2:
+                self._shake_x *= max(0.0, 1.0 - dt * 22.0)
+            else:
+                self._shake_x = 0.0
+            return
+
+        target_x, step_dur = self._shake_sequence[self._shake_seq_idx]
+        # Chase target quickly within each step
+        self._shake_x += (target_x - self._shake_x) * min(1.0, dt * 28.0)
+        self._shake_step_elapsed += dt
+        if self._shake_step_elapsed >= step_dur:
+            self._shake_step_elapsed -= step_dur
+            self._shake_seq_idx += 1
+
     def trigger_hurt(self):
         """Queue one playthrough of noki_hurt on top of noki_bop."""
         if not self._hurt_frames:
