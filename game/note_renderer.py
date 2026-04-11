@@ -4,13 +4,31 @@ Instantiated and owned by Game; accesses game state via self.game.
 """
 import pygame
 import time
-from . import constants as C
+import random
+
+_NOTE_COLORS = ['blue', 'pink']
 
 
 class NoteRenderer:
 
     def __init__(self, game) -> None:
         self.game = game
+        self._note_color_map: dict[float, str] = {}
+        self._build_color_map()
+
+    def _build_color_map(self) -> None:
+        """Pre-assign a color to every non-rest note, cycling per word with no repeats."""
+        prev_color: str | None = None
+        current_color: str | None = None
+        for event in self.game.rhythm.beat_map:
+            if event.is_rest or not event.char:
+                continue
+            if event.char_idx == 0:
+                available = [c for c in _NOTE_COLORS if c != prev_color]
+                current_color = random.choice(available)
+                prev_color = current_color
+            if current_color is not None:
+                self._note_color_map[event.timestamp] = current_color
 
     def render(
         self,
@@ -116,8 +134,6 @@ class NoteRenderer:
                                 g.missed_note_shockwaves.add(note_idx)
                             continue
 
-                        color = C.MISSED_COLOR if is_missed else C.COLOR
-
                         if event.hold_duration > 0:
                             hold_px = int(event.hold_duration * g.scroll_speed)
                             hold_rect_h = radius * 2
@@ -143,9 +159,12 @@ class NoteRenderer:
                                                  border_radius=radius)
                                 g.screen.blit(hold_surf, (hold_rect_x, timeline_y - radius))
 
-                        pygame.draw.circle(
-                            g.screen,
-                            color,
-                            (int(marker_x), timeline_y),
-                            radius,
-                        )
+                        if event.hold_duration > 0:
+                            note_surf = g.default_note_img
+                        else:
+                            note_color = self._note_color_map.get(event.timestamp, 'blue')
+                            note_surf = g.note_sprites[note_color]
+                        if is_missed:
+                            note_surf = note_surf.copy()
+                            note_surf.fill((255, 80, 80, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                        g.screen.blit(note_surf, note_surf.get_rect(center=(int(marker_x), timeline_y)))

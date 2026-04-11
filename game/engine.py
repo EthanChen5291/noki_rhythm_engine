@@ -109,6 +109,50 @@ class Game(EffectsMixin, MechanicsMixin):
         self._beatline_img = _scale_to_height(
             pygame.image.load(os.path.join(assets_path, 'beatline.png')).convert_alpha(), 60)
 
+        # Note sprite: canvas is 300px, note is ~1/8 of canvas (37.5px).
+        # Procedural radius = 14 → diameter 28px. Scale full sprite so note portion matches.
+        # 0.30 × 1.20 = 0.36 (+20% from previous size) → ~80px
+        _NOTE_SPRITE_SIZE = int(300 * 28 / 37.5 * 0.54)  # 0.36 × 1.5
+
+        def _load_note_sprite(name):
+            return pygame.transform.smoothscale(
+                pygame.image.load(os.path.join(assets_path, name)).convert_alpha(),
+                (_NOTE_SPRITE_SIZE, _NOTE_SPRITE_SIZE),
+            )
+
+        def _load_hit_frames(folder):
+            d = os.path.join(assets_path, folder)
+            if not os.path.isdir(d):
+                return []
+            paths = sorted(
+                os.path.join(d, f) for f in os.listdir(d) if f.lower().endswith('.png')
+            )
+            return [
+                pygame.transform.smoothscale(
+                    pygame.image.load(p).convert_alpha(),
+                    (_NOTE_SPRITE_SIZE, _NOTE_SPRITE_SIZE),
+                )
+                for p in paths
+            ]
+
+        # Keyed by color name: 'blue', 'pink'
+        self.note_sprites: dict[str, pygame.Surface] = {
+            'blue': _load_note_sprite('noki_note_blue.png'),
+            'pink': _load_note_sprite('noki_note_pink.png'),
+        }
+        _red_frames  = _load_hit_frames('noki_hit_red')
+        _blue_frames = _load_hit_frames('noki_hit_blue')
+        self.note_hit_frames: dict[str, list[pygame.Surface]] = {
+            'blue': _blue_frames,
+            'pink': _red_frames,   # no noki_hit_pink folder; share red
+        }
+        self._note_hit_fps: float = 24.0
+        self._note_hit_anims: list[dict] = []  # {'x', 'y', 'frame': float, 'color': str}
+
+        # default_note.png used for hold notes
+        self.default_note_img = _load_note_sprite('default_note.png')
+        self._note_hit_frames = _red_frames
+
         _hm_w = 2 * abs(C.HIT_MARKER_X_OFFSET)
         _hm_h = 2 * abs(C.HIT_MARKER_Y_OFFSET)
         self.hitmarker_img = pygame.transform.smoothscale(
@@ -514,6 +558,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self.update_shockwaves(dt)
         self.update_hold_particles(dt)
         self.update_hit_bursts(dt)
+        self.update_note_hit_anims(dt)
         self.update_hitmarker_glow(dt)
 
         self.update_cat_animation()
@@ -602,8 +647,11 @@ class Game(EffectsMixin, MechanicsMixin):
                     self.check_drop_note_hit(current_char_idx)
 
                     _hx, _hy = int(self.hit_marker_current_x), 380
+                    _hit_evt = self.rhythm.beat_map[current_char_idx] if current_char_idx < len(self.rhythm.beat_map) else None
+                    _hit_color = self.note_renderer._note_color_map.get(_hit_evt.timestamp, 'red') if _hit_evt else 'red'
                     if judgment != 'hold_started':
                         self.trigger_hit_ripple(_hx, _hy)
+                        self.trigger_note_hit_anim(_hx, _hy, _hit_color)
                     self._spawn_hit_particles(_hx, _hy)
 
                     if judgment == 'hold_started':
@@ -713,5 +761,5 @@ class Game(EffectsMixin, MechanicsMixin):
             int(time.perf_counter() * 30),
             y0=_timeline_band_y0,
             y1=_timeline_band_y1,
-            right_edge=self.dual_side_active,
+            right_edge=True,
         )

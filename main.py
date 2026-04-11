@@ -146,9 +146,14 @@ def main():
 
         # on finish, add some finish thing for 2-3 seconds the open 'finish' menu
         
+        # add some gradients in the background,
+        # add PRESS note animation -> it fades into mist
+
         #make it to where, on wrong note, the next char isn't immediately deactivated.
 
         # some speed-ups seem to happen 
+
+        # zoom in mode _> everything becomes bigger (including circles and timeline) -> what does this do? double timeline?
 
         #timeline rotate
         #EVENTUALLY

@@ -26,6 +26,10 @@ class EffectsMixin:
     shockwaves: list[M.Shockwave]
     _hold_particles: list[dict[str, Any]]
     _hit_bursts: list[dict[str, Any]]
+    _note_hit_anims: list[dict[str, Any]]
+    _note_hit_frames: list[pygame.Surface]
+    note_hit_frames: dict[str, list[pygame.Surface]]
+    _note_hit_fps: float
 
     # ── Screen shake ──
     _shake_x: float
@@ -348,3 +352,23 @@ class EffectsMixin:
         blit_x = int(wave.center_x - center)
         blit_y = int(wave.center_y - center)
         self.screen.blit(surface, (blit_x, blit_y))
+
+    def trigger_note_hit_anim(self, x: int, y: int, color: str = 'red') -> None:
+        """Spawn a note_hit png-sequence animation centered at (x, y)."""
+        self._note_hit_anims.append({'x': x, 'y': y, 'frame': 0.0, 'color': color})
+
+    def update_note_hit_anims(self, dt: float) -> None:
+        """Advance and render all active note_hit animations."""
+        surviving = []
+        for anim in self._note_hit_anims:
+            frames = self.note_hit_frames.get(anim['color'], self._note_hit_frames)
+            if not frames:
+                continue
+            fi = int(anim['frame'])
+            if fi < len(frames):
+                surf = frames[fi]
+                rect = surf.get_rect(center=(anim['x'], anim['y']))
+                self.screen.blit(surf, rect)
+                anim['frame'] += self._note_hit_fps * dt
+                surviving.append(anim)
+        self._note_hit_anims = surviving

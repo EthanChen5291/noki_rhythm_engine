@@ -32,10 +32,10 @@ import pygame
 # ── Tuning ────────────────────────────────────────────────────────────────────
 
 STRIP_H     = 8       # scanline strip height in pixels (larger = squarer pixels)
-MAX_CURVE   = 30      # max downward Y offset at the timeline edge (pixels)
-MAX_SCATTER = 18      # max ± stochastic Y offset at the timeline edge (pixels)
-DISSOLVE_K  = 0.68    # t at which dissolve begins (0–1)
-EDGE_FRAC   = 1 / 15  # fraction of timeline width per edge zone
+MAX_CURVE   = 16      # max downward Y offset at the timeline edge (pixels)
+MAX_SCATTER = 7       # max ± stochastic Y offset at the timeline edge (pixels)
+DISSOLVE_K  = 0.55    # t at which dissolve begins (0–1); lower = fades out sooner
+EDGE_FRAC   = 1 / 25  # fraction of timeline width per edge zone (~40% smaller area)
 # N_COLS is now computed dynamically as max(1, ew // STRIP_H) so each pixel
 # is approximately STRIP_H × STRIP_H (square).
 

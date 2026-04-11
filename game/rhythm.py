@@ -46,6 +46,7 @@ class RhythmManager:
                 section=e.section,
                 is_rest=e.is_rest,
                 hit=e.hit,
+                from_left=e.from_left,
                 hold_duration=e.hold_duration,
             )
             for e in beat_map
