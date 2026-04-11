@@ -132,6 +132,10 @@ def main():
 
         # ==========================TO DO LIST
 
+        # hold note -> noki meows to music for duration of hold note
+
+        # don't repeat same letter if single letter
+
         # for the bounce mode mode -> reverse on arrows (bounces off of arrows and reverses) almost like going back in the timeline. the measure bars should also kinda accelerae backwards and reverse too. so not like a reverse, but almost like the hitmarker bounces off (so like momentum in the opposite direction with the measure and beat markers reflecting that)
         # don't move the hitmarker. 
         # make style
