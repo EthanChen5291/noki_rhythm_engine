@@ -6,7 +6,7 @@ import pygame
 import time
 import random
 
-_NOTE_COLORS = ['blue', 'pink']
+_NOTE_COLORS = ['blue', 'pink', 'green', 'orange']
 
 
 class NoteRenderer:

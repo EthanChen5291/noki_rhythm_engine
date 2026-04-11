@@ -155,25 +155,33 @@ class EffectsMixin:
             )
             self.shockwaves.append(shockwave)
 
-    def _spawn_hit_particles(self, x: int, y: int):
-        """Spawn golden + white particles at (x, y) for any correct hit."""
+    _NOTE_THEME_COLORS = {
+        'blue':   (142, 204, 255),
+        'pink':   (255, 170, 241),
+        'green':  (142, 255, 194),
+        'orange': (255, 193, 142),
+    }
+
+    def _spawn_hit_particles(self, x: int, y: int, color: str = 'blue'):
+        """Spawn themed + white particles at (x, y) for any correct hit."""
         import random as _rnd
+        theme_rgb = self._NOTE_THEME_COLORS.get(color, (255, 210, 60))
         for _ in range(2):
             self._hold_particles.append({
                 'x': float(x) + _rnd.uniform(-12, 12),
                 'y': float(y) + _rnd.uniform(-14, 14),
-                'vx': _rnd.uniform(-130, 130),
-                'vy': _rnd.uniform(-160, 40),
+                'vx': _rnd.uniform(-175, 175),
+                'vy': _rnd.uniform(-210, 55),
                 'alpha': 220.0,
                 'radius': _rnd.uniform(3.75, 7.5),
-                'color': (255, 210, 60),
+                'color': theme_rgb,
             })
         for _ in range(3):
             self._hold_particles.append({
                 'x': float(x) + _rnd.uniform(-10, 10),
                 'y': float(y) + _rnd.uniform(-12, 12),
-                'vx': _rnd.uniform(-220, 220),
-                'vy': _rnd.uniform(-260, 60),
+                'vx': _rnd.uniform(-290, 290),
+                'vy': _rnd.uniform(-340, 80),
                 'alpha': 190.0,
                 'radius': _rnd.uniform(1.5, 3.3),
                 'color': (240, 240, 255),

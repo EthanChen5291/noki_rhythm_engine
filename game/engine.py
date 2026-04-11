@@ -135,22 +135,29 @@ class Game(EffectsMixin, MechanicsMixin):
                 for p in paths
             ]
 
-        # Keyed by color name: 'blue', 'pink'
+        # Keyed by color name: 'blue', 'pink', 'green', 'orange'
         self.note_sprites: dict[str, pygame.Surface] = {
-            'blue': _load_note_sprite('noki_note_blue.png'),
-            'pink': _load_note_sprite('noki_note_pink.png'),
+            'blue':   _load_note_sprite('noki_note_blue.png'),
+            'pink':   _load_note_sprite('noki_note_pink.png'),
+            'green':  _load_note_sprite('noki_note_green.png'),
+            'orange': _load_note_sprite('noki_note_orange.png'),
         }
-        _red_frames  = _load_hit_frames('noki_hit_red')
-        _blue_frames = _load_hit_frames('noki_hit_blue')
+        _red_frames    = _load_hit_frames('noki_hit_red')
+        _blue_frames   = _load_hit_frames('noki_hit_blue')
+        _green_frames  = _load_hit_frames('noki_hit_green')
+        _orange_frames = _load_hit_frames('noki_hit_orange')
+        _pink_frames   = _load_hit_frames('noki_hit_pink')
         self.note_hit_frames: dict[str, list[pygame.Surface]] = {
-            'blue': _blue_frames,
-            'pink': _red_frames,   # no noki_hit_pink folder; share red
+            'blue':   _blue_frames,
+            'pink':   _pink_frames or _red_frames,
+            'green':  _green_frames,
+            'orange': _orange_frames,
         }
         self._note_hit_fps: float = 24.0
         self._note_hit_anims: list[dict] = []  # {'x', 'y', 'frame': float, 'color': str}
 
-        # default_note.png used for hold notes
-        self.default_note_img = _load_note_sprite('default_note.png')
+        # hold_note.png used for hold notes
+        self.default_note_img = _load_note_sprite('hold_note.png')
         self._note_hit_frames = _red_frames
 
         _hm_w = 2 * abs(C.HIT_MARKER_X_OFFSET)
@@ -646,13 +653,24 @@ class Game(EffectsMixin, MechanicsMixin):
 
                     self.check_drop_note_hit(current_char_idx)
 
-                    _hx, _hy = int(self.hit_marker_current_x), 380
+                    _hy = 380
                     _hit_evt = self.rhythm.beat_map[current_char_idx] if current_char_idx < len(self.rhythm.beat_map) else None
-                    _hit_color = self.note_renderer._note_color_map.get(_hit_evt.timestamp, 'red') if _hit_evt else 'red'
+                    _hit_color = self.note_renderer._note_color_map.get(_hit_evt.timestamp, 'blue') if _hit_evt else 'blue'
+                    if _hit_evt is not None:
+                        _time_until_hit = _hit_evt.timestamp - current_time
+                        if _hit_evt.from_left:
+                            _note_x = self.hit_marker_current_x - (_time_until_hit * self.scroll_speed)
+                        else:
+                            _note_x = self.hit_marker_current_x + (_time_until_hit * self.scroll_speed)
+                        _grace_px = self.rhythm.timing_windows['ok'] * self.scroll_speed / 4
+                        _hx = int(max(self.hit_marker_current_x - _grace_px,
+                                      min(self.hit_marker_current_x + _grace_px, _note_x)))
+                    else:
+                        _hx = int(self.hit_marker_current_x)
                     if judgment != 'hold_started':
                         self.trigger_hit_ripple(_hx, _hy)
                         self.trigger_note_hit_anim(_hx, _hy, _hit_color)
-                    self._spawn_hit_particles(_hx, _hy)
+                    self._spawn_hit_particles(_hx, _hy, _hit_color)
 
                     if judgment == 'hold_started':
                         self.show_message("HOLD...", 0.5)
