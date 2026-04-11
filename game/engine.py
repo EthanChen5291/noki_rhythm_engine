@@ -272,10 +272,18 @@ class Game(EffectsMixin, MechanicsMixin):
         self.scroll_tiers          = _result['scroll_tiers']
         self.energy_shifts         = _result['energy_shifts']
         self._climax_shake_beats   = _result['climax_shake_beats']  # [(song_time, intensity), ...]
-        # Only allow shaking after the first 20% of the song has passed
         if self._climax_shake_beats and self.song.beat_times:
+            # Only allow shaking after the first 20% of the song has passed
             _cutoff = self.song.beat_times[-1] * 0.20
             self._climax_shake_beats = [(t, i) for t, i in self._climax_shake_beats if t >= _cutoff]
+            # Guard: at most one shake per 2-beat window (keep highest intensity per window)
+            _window = self.beat_duration * 2
+            _by_window: dict[int, tuple] = {}
+            for _t, _i in self._climax_shake_beats:
+                _w = int(_t / _window)
+                if _w not in _by_window or _i > _by_window[_w][1]:
+                    _by_window[_w] = (_t, _i)
+            self._climax_shake_beats = sorted(_by_window.values())
         self._climax_shake_idx     = 0
 
         # --- screen shake state ---

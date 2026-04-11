@@ -177,6 +177,7 @@ def assign_words_to_slots(
     section_idx = 0
     last_word_end_time = -float('inf')
     last_word_text = ""
+    dual_note_count = 0   # counts notes placed inside dual sections for alternation
 
     # one measure grace period when starting dual sections
     grace_beats = 4
@@ -260,7 +261,8 @@ def assign_words_to_slots(
             if dual_side_sections:
                 for dual_sec in dual_side_sections:
                     if dual_sec.start_time <= slot.time < dual_sec.end_time:
-                        from_left = (char_idx % 2 == 1)
+                        from_left = (dual_note_count % 2 == 1)
+                        dual_note_count += 1
                         break
 
             # Check if this slot falls within a detected hold region
