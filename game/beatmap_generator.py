@@ -68,6 +68,13 @@ def generate_beatmap(
         if path:
             hold_regions = detect_hold_regions(path, song.beat_times, song.bpm)
 
+    # For hard/demon: cap the maximum silence gap so that non-quiet sections
+    # never go longer than one bounce iteration (8 beats) without a word.
+    # This prevents empty runs through loud bounce-section iterations.
+    _max_silence = float('inf')
+    if difficulty in ("master", "demon"):
+        _max_silence = beat_duration * 8   # one bounce period
+
     word_bank = get_words_with_rhythm_info(word_list, beat_duration, target_cps=profile.target_cps)
     events = assign_words_to_slots(
         measures, word_bank, beat_duration, intensity_profile, dual_side_sections,
@@ -76,6 +83,7 @@ def generate_beatmap(
         min_word_gap=profile.min_word_gap, quiet_skip_chance=profile.quiet_skip_chance,
         max_words_per_measure=profile.max_words_per_measure,
         max_word_length=profile.max_word_length,
+        max_silence_gap=_max_silence,
     )
     #events = add_rhythm_variations(events, song)
 

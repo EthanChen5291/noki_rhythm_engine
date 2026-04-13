@@ -198,6 +198,24 @@ def find_next_measure_time(measures, start_idx, fallback_time):
     return fallback_time
 
 
+def in_grace_period_check(
+    slot_time: float,
+    dual_side_sections: Optional[list[M.DualSideSection]],
+    grace_duration: float,
+) -> bool:
+    """Return True if slot_time falls within a dual-section grace window."""
+    if not dual_side_sections:
+        return False
+    for dual_sec in dual_side_sections:
+        if dual_sec.start_time - grace_duration <= slot_time < dual_sec.start_time:
+            return True
+        if dual_sec.start_time <= slot_time < dual_sec.start_time + grace_duration:
+            return True
+        if dual_sec.end_time <= slot_time < dual_sec.end_time + grace_duration:
+            return True
+    return False
+
+
 def assign_words_to_slots(
     measures: list[list[M.RhythmSlot]],
     word_bank: list[M.Word],
@@ -211,11 +229,16 @@ def assign_words_to_slots(
     quiet_skip_chance: float = 0.65,
     max_words_per_measure: int = 1,
     max_word_length: int = 99,
+    max_silence_gap: float = float('inf'),
 ) -> list[M.CharEvent]:
     """
     Assign characters to rhythm slots measure-by-measure.
     max_words_per_measure > 1 (demon difficulty) will fill unused slots within
     the same measure with additional words, giving dense rapid-fire note density.
+
+    max_silence_gap: if this many seconds have passed without any word being placed
+    and the current section is not truly quiet, force a word regardless of gap/skip
+    checks.  Used for hard/demon to prevent empty bounce-section iterations.
     """
     events: list[M.CharEvent] = []
     remaining_words = word_bank.copy()
@@ -225,6 +248,12 @@ def assign_words_to_slots(
     dual_note_count = 0   # counts notes placed inside dual sections for alternation
     _burst_active = False  # True after placing a spam word → tighter gap next measure
     _burst_gap = max(min_word_gap * 0.35, 0.0)  # gap used between consecutive spam words
+
+    # Pre-compute average intensity once
+    _avg_intensity: float = 0.0
+    if intensity_profile and intensity_profile.section_intensities:
+        _avg_intensity = (sum(intensity_profile.section_intensities)
+                          / len(intensity_profile.section_intensities))
 
     # one measure grace period when starting dual sections
     grace_beats = 4
@@ -237,39 +266,40 @@ def assign_words_to_slots(
         section_idx = measure_idx // 4
 
         first_slot_time = measure_slots[0].time
+        silence_duration = first_slot_time - last_word_end_time
+
+        # Determine whether this section is "truly quiet" (below 55% of avg).
+        # Used by the force-word safeguard — we only override skips for non-quiet sections.
+        _is_truly_quiet = False
+        if intensity_profile and section_idx < len(intensity_profile.section_intensities):
+            _sec_intensity = intensity_profile.section_intensities[section_idx]
+            _is_truly_quiet = (_avg_intensity > 0 and _sec_intensity < _avg_intensity * 0.55)
+
+        # Force-word flag: silence has lasted too long for a non-quiet section
+        force_word = (
+            max_silence_gap < float('inf')
+            and silence_duration > max_silence_gap
+            and not _is_truly_quiet
+            and not in_grace_period_check(first_slot_time, dual_side_sections, grace_duration)
+        )
+
         effective_gap = _burst_gap if _burst_active else min_word_gap
-        if first_slot_time < last_word_end_time + effective_gap:
+        if not force_word and first_slot_time < last_word_end_time + effective_gap:
             continue
 
-        in_grace_period = False
-        if dual_side_sections:
-            for dual_sec in dual_side_sections:
-                pre_start_begin = dual_sec.start_time - grace_duration
-                if pre_start_begin <= first_slot_time < dual_sec.start_time:
-                    in_grace_period = True
-                    break
-                start_grace_end = dual_sec.start_time + grace_duration
-                if dual_sec.start_time <= first_slot_time < start_grace_end:
-                    in_grace_period = True
-                    break
-                end_grace_end = dual_sec.end_time + grace_duration
-                if dual_sec.end_time <= first_slot_time < end_grace_end:
-                    in_grace_period = True
-                    break
+        in_grace_period = in_grace_period_check(first_slot_time, dual_side_sections, grace_duration)
 
         if in_grace_period:
             continue
 
         intensity_ratio = 1.0
         if intensity_profile and section_idx < len(intensity_profile.section_intensities):
-            avg_intensity = sum(intensity_profile.section_intensities) / len(intensity_profile.section_intensities)
-            intensity_ratio = intensity_profile.section_intensities[section_idx] / (avg_intensity + 1e-6)
+            intensity_ratio = (intensity_profile.section_intensities[section_idx]
+                               / (_avg_intensity + 1e-6))
 
-        if intensity_profile and section_idx < len(intensity_profile.section_intensities):
+        if not force_word and intensity_profile and section_idx < len(intensity_profile.section_intensities):
             intensity = intensity_profile.section_intensities[section_idx]
-            avg = sum(intensity_profile.section_intensities) / len(intensity_profile.section_intensities)
-
-            if intensity < avg * 0.7 and random.random() < quiet_skip_chance:
+            if intensity < _avg_intensity * 0.7 and random.random() < quiet_skip_chance:
                 continue
 
         # ── inner loop: place up to max_words_per_measure words in this measure ──
