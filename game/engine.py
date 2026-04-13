@@ -69,6 +69,7 @@ class Game(EffectsMixin, MechanicsMixin):
 
         self._last_displayed_word = None
         self._previous_word = None
+        self._previous_word_full = None
         self._word_transition_start = 0.0
 
         # --- load quick assets first
@@ -219,18 +220,19 @@ class Game(EffectsMixin, MechanicsMixin):
                     self.song_path, song.bpm, pace.pace_score, song.beat_times)
                 diff_prof  = C.DIFFICULTY_PROFILES.get(
                     level.difficulty, C.DIFFICULTY_PROFILES["classic"])
-                beatmap    = generate_beatmap(
-                    word_list=level.word_bank, song=song,
-                    dual_side_sections=dual_secs, difficulty=level.difficulty)
-                lead_in    = calculate_lead_in(song.beat_times)
-                rhythm     = RhythmManager(
-                    beatmap, song.bpm, lead_in=lead_in,
-                    timing_scale=diff_prof.timing_scale)
                 drops      = detect_drops(song.beat_times, self.song_path, song.bpm)
                 tiers      = calculate_scroll_tiers(
                     self.song_path, song.bpm, pace.pace_score, song.beat_times)
                 shifts     = calculate_energy_shifts(
                     self.song_path, song.bpm, pace.pace_score, song.beat_times)
+                beatmap    = generate_beatmap(
+                    word_list=level.word_bank, song=song,
+                    dual_side_sections=dual_secs, difficulty=level.difficulty,
+                    energy_shifts=shifts)
+                lead_in    = calculate_lead_in(song.beat_times)
+                rhythm     = RhythmManager(
+                    beatmap, song.bpm, lead_in=lead_in,
+                    timing_scale=diff_prof.timing_scale)
                 shake_beats = detect_climax_shake_beats(
                     pace.pace_score, song.bpm, self.song_path, song.beat_times, tiers)
                 print(f"[shake] pace_score={pace.pace_score:.3f}  bpm={song.bpm:.1f}  shake_beats={len(shake_beats)}")
@@ -634,7 +636,13 @@ class Game(EffectsMixin, MechanicsMixin):
             pause_requested = True
 
         self.input.update(events=events)
+        _hold_before_update = self.rhythm._active_hold
         self.rhythm.update()
+        # Hold auto-completed by timer (not via key-release) — fire hitsound
+        if _hold_before_update is not None and self.rhythm._active_hold is None:
+            if self._hitsound:
+                self._hitsound.play()
+            self.trigger_hit_ripple(int(self.hit_marker_current_x), 380)
 
         # ── end-of-song outro deceleration ───────────────────────────────
         song_time_now = current_time - self.rhythm.lead_in
@@ -773,6 +781,8 @@ class Game(EffectsMixin, MechanicsMixin):
                         self.score = self.rhythm.get_score()
                     else:
                         self.show_message("Hold broken!", 0.8)
+                        if self._hitsound:
+                            self._hitsound.play()
                         self.trigger_hurt()
                         self._timeline_flash = 1.0
                         self._timeline_shake_offset = 6.0

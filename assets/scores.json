@@ -9,7 +9,8 @@
   },
   "Scorpion.mp3": {
     "classic": 103400,
-    "master": 187295
+    "master": 187295,
+    "demon": 45160
   },
   "Catch Catch.mp3": {
     "classic": 73216,
@@ -63,7 +64,8 @@
   },
   "Takedown - Huntrix.mp3": {
     "master": 181200,
-    "classic": 69160
+    "classic": 69160,
+    "demon": 52148
   },
   "Ed Sheeran  Shape of You (Lyrics).mp3": {
     "classic": 70718
@@ -82,7 +84,8 @@
     "classic": 110591
   },
   "Father Stretch My Hands Pt. 1.mp3": {
-    "master": 43475
+    "master": 43475,
+    "demon": 43611
   },
   "Drake - Hotline Bling (Official Audio).mp3": {
     "master": 104791
@@ -100,7 +103,7 @@
     "demon": 137973
   },
   "Freedom Dive (tpz Overcute Remix).mp3": {
-    "demon": 90931
+    "demon": 109482
   },
   "GHOST.mp3": {
     "demon": 226500

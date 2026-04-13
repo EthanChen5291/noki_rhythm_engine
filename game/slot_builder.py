@@ -223,6 +223,7 @@ def assign_words_to_slots(
     intensity_profile: Optional[M.IntensityProfile] = None,
     dual_side_sections: Optional[list[M.DualSideSection]] = None,
     hold_regions: Optional[list[tuple[float, float]]] = None,
+    bounce_grace_zones: Optional[list[tuple[float, float]]] = None,
     target_cps: float = C.TARGET_CPS,
     cps_tolerance: float = C.CPS_TOLERANCE,
     min_word_gap: float = C.MIN_WORD_GAP,
@@ -248,6 +249,13 @@ def assign_words_to_slots(
     dual_note_count = 0   # counts notes placed inside dual sections for alternation
     _burst_active = False  # True after placing a spam word → tighter gap next measure
     _burst_gap = max(min_word_gap * 0.35, 0.0)  # gap used between consecutive spam words
+
+    # Echo pool: recently-placed words and the intensity ratio at the time of placement.
+    # When the current section has a similar intensity, we occasionally replay one of
+    # these words to create the "repeat note" effect (with its cycling repeat colors).
+    _echo_pool: list[tuple[str, float]] = []  # [(word_text, intensity_ratio), ...]
+    _ECHO_MAX = 4
+    _ECHO_CHANCE = 0.20  # base probability of echoing in a similar-intensity section
 
     # Pre-compute average intensity once
     _avg_intensity: float = 0.0
@@ -314,6 +322,12 @@ def assign_words_to_slots(
             effective_gap = _burst_gap if _burst_active else min_word_gap
             eligible = [s for s in available_slots
                         if not s.is_filled and s.time >= last_word_end_time + effective_gap]
+            # Remove slots that fall inside a bounce grace zone — they will be
+            # silenced later by _apply_bounce_grace_periods, so skip them now.
+            if bounce_grace_zones:
+                eligible = [s for s in eligible
+                            if not any(gz0 <= s.time < gz1
+                                       for gz0, gz1 in bounce_grace_zones)]
             if not eligible:
                 break
 
@@ -321,17 +335,33 @@ def assign_words_to_slots(
             if not candidates:
                 candidates = remaining_words
 
-            word = select_word_for_measure(
-                len(eligible),
-                candidates,
-                word_bank,
-                intensity_ratio,
-                target_cps=target_cps,
-                cps_tolerance=cps_tolerance,
-                allow_spam=_burst_active or intensity_ratio >= 1.4,
-                beat_duration=beat_duration,
-                max_word_length=max_word_length,
-            )
+            # Echo: occasionally replay a word from a section with similar intensity
+            # to create natural repeat patterns without forcing them every measure.
+            word = None
+            if _echo_pool and not _burst_active:
+                similar_echoes = [
+                    w_text for w_text, i_r in _echo_pool
+                    if w_text != last_word_text and abs(i_r - intensity_ratio) < 0.25
+                ]
+                if similar_echoes and random.random() < _ECHO_CHANCE:
+                    echo_text = random.choice(similar_echoes)
+                    echo_cands = [w for w in word_bank
+                                  if w.text == echo_text and len(w.text) <= len(eligible)]
+                    if echo_cands:
+                        word = random.choice(echo_cands)
+
+            if word is None:
+                word = select_word_for_measure(
+                    len(eligible),
+                    candidates,
+                    word_bank,
+                    intensity_ratio,
+                    target_cps=target_cps,
+                    cps_tolerance=cps_tolerance,
+                    allow_spam=_burst_active or intensity_ratio >= 1.4,
+                    beat_duration=beat_duration,
+                    max_word_length=max_word_length,
+                )
 
             if not word or not word.text:
                 break
@@ -392,6 +422,14 @@ def assign_words_to_slots(
             last_word_text = word.text
             last_rest_slot = selected_slots[-1]
             _burst_active = len(word.text) == 1 and intensity_ratio >= 1.4
+
+            # Update echo pool: track this word for potential repeat in similar sections.
+            # Only track multi-char words (single chars are spam, not repeat candidates).
+            if len(word.text) > 1:
+                _echo_pool[:] = [(t, i) for t, i in _echo_pool if t != word.text]
+                _echo_pool.append((word.text, intensity_ratio))
+                if len(_echo_pool) > _ECHO_MAX:
+                    _echo_pool.pop(0)
 
             # remove used slots so subsequent words in this measure don't reuse them
             used_times = {s.time for s in selected_slots}

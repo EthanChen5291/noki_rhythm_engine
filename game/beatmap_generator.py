@@ -21,6 +21,7 @@ def generate_beatmap(
     song: M.Song,
     dual_side_sections: Optional[list[M.DualSideSection]] = None,
     difficulty: str = "classic",
+    energy_shifts: Optional[list[M.SectionEnergyShift]] = None,
 ) -> list[M.CharEvent]:
     """Generate an engaging, playable beatmap using slot-based rhythm generation."""
     profile = C.DIFFICULTY_PROFILES[difficulty]
@@ -75,10 +76,15 @@ def generate_beatmap(
     if difficulty in ("master", "demon"):
         _max_silence = beat_duration * 8   # one bounce period
 
+    # Pre-compute bounce grace zones so the word assigner avoids placing
+    # words in slots that will later be silenced by _apply_bounce_grace_periods.
+    bounce_grace_zones = _compute_bounce_grace_zones(energy_shifts, dual_side_sections, song)
+
     word_bank = get_words_with_rhythm_info(word_list, beat_duration, target_cps=profile.target_cps)
     events = assign_words_to_slots(
         measures, word_bank, beat_duration, intensity_profile, dual_side_sections,
         hold_regions=hold_regions,
+        bounce_grace_zones=bounce_grace_zones,
         target_cps=profile.target_cps, cps_tolerance=profile.cps_tolerance,
         min_word_gap=profile.min_word_gap, quiet_skip_chance=profile.quiet_skip_chance,
         max_words_per_measure=profile.max_words_per_measure,
@@ -131,6 +137,38 @@ def generate_beatmap(
             ))
 
     return events
+
+
+def _compute_bounce_grace_zones(
+    energy_shifts: Optional[list[M.SectionEnergyShift]],
+    dual_side_sections: Optional[list[M.DualSideSection]],
+    song: M.Song,
+) -> list[tuple[float, float]]:
+    """Return (start, end) song-time windows to avoid placing words in.
+    Mirrors the logic of Game._build_bounce_events / _apply_bounce_grace_periods
+    so the beatmap generator can skip slots that would later be silenced."""
+    if not energy_shifts or not song.beat_times:
+        return []
+    beat_dur = 60.0 / song.bpm
+    grace_before = beat_dur * 1   # 1 beat before bounce
+    grace_after  = beat_dur * 2   # 2 beats after bounce
+    dual_ranges = [(ds.start_time, ds.end_time) for ds in (dual_side_sections or [])]
+    zones: list[tuple[float, float]] = []
+    for shift in energy_shifts:
+        if shift.energy_delta <= C.BOUNCE_THRESHOLD:
+            continue
+        overlaps = any(shift.start_time < de and shift.end_time > ds
+                       for ds, de in dual_ranges)
+        if overlaps:
+            continue
+        for i, bt in enumerate(song.beat_times):
+            if bt < shift.start_time:
+                continue
+            if bt >= shift.end_time:
+                break
+            if i % 8 == 0:
+                zones.append((bt - grace_before, bt + grace_after))
+    return zones
 
 
 def _apply_demon_percussion_pattern(

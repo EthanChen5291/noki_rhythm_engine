@@ -77,40 +77,68 @@ class WordRenderer:
 
     def _note_rgb_for_event_ts(self, timestamp: float) -> tuple:
         color_name = self.game.note_renderer._note_color_map.get(timestamp, 'blue')
-        return _NOTE_COLOR_RGB.get(color_name, (255, 255, 255))
+        return _NOTE_COLOR_RGB.get(color_name, (142, 204, 255))
 
-    def _word_note_color(self, word_text: str, search_from: int = 0) -> tuple:
-        """Return the RGB note color for the first matching word-start event at or after search_from."""
+    def _word_note_color(self, word_text_full: str, search_from: int = 0) -> tuple:
+        """Return the RGB note color for the first matching word-start event at or after search_from.
+        word_text_full must be the full (non-truncated) word text stored in beat_map events."""
         for ev in self.game.rhythm.beat_map[search_from:]:
-            if ev.is_rest or ev.char_idx != 0 or ev.word_text != word_text:
+            if ev.is_rest or ev.char_idx != 0 or ev.word_text != word_text_full:
                 continue
             return self._note_rgb_for_event_ts(ev.timestamp)
-        return (255, 255, 255)
+        return (142, 204, 255)
 
     def _current_word_note_color(self) -> tuple:
         """Note color for the currently active word slot."""
         g = self.game
+        # Use the full word text (not display-truncated) for matching against beat_map events
+        current_word_full = g.rhythm.current_expected_word()
+        if not current_word_full:
+            return (142, 204, 255)
         idx = min(g.rhythm.char_event_idx, len(g.rhythm.beat_map) - 1)
-        # Scan backward from current event to find char_idx==0 of this word
-        current_word = g.rhythm.current_display_word()
+        beat_map = g.rhythm.beat_map
+
+        # Scan backward: handles mid-word case where char_idx==0 was already consumed
         for i in range(idx, -1, -1):
-            ev = g.rhythm.beat_map[i]
-            if ev.is_rest or ev.word_text != current_word:
+            ev = beat_map[i]
+            if ev.is_rest or ev.word_text != current_word_full:
                 continue
             if ev.char_idx == 0:
                 return self._note_rgb_for_event_ts(ev.timestamp)
-        return (255, 255, 255)
 
-    def _prev_word_note_color(self, prev_word: str) -> tuple:
-        """Note color for the most recent past slot of prev_word."""
+        # Scan forward: handles the case where char_event_idx is at a rest before the word
+        for i in range(idx, len(beat_map)):
+            ev = beat_map[i]
+            if ev.is_rest:
+                continue
+            if ev.word_text == current_word_full and ev.char_idx == 0:
+                return self._note_rgb_for_event_ts(ev.timestamp)
+            if ev.char_idx == 0 and ev.word_text != current_word_full:
+                break  # moved past this word's block
+        return (142, 204, 255)
+
+    def _get_next_full_word_text(self) -> str | None:
+        """Return the full word_text of the next upcoming word (for color lookup)."""
+        g = self.game
+        current_full = g.rhythm.current_expected_word()
+        for i in range(g.rhythm.char_event_idx, len(g.rhythm.beat_map)):
+            ev = g.rhythm.beat_map[i]
+            if ev.is_rest or ev.char_idx != 0 or not ev.word_text:
+                continue
+            if ev.word_text != current_full:
+                return ev.word_text
+        return None
+
+    def _prev_word_note_color(self, prev_word_full: str) -> tuple:
+        """Note color for the most recent past slot of prev_word_full (full word text)."""
         g = self.game
         idx = min(g.rhythm.char_event_idx, len(g.rhythm.beat_map) - 1)
         for i in range(idx, -1, -1):
             ev = g.rhythm.beat_map[i]
-            if ev.is_rest or ev.char_idx != 0 or ev.word_text != prev_word:
+            if ev.is_rest or ev.char_idx != 0 or ev.word_text != prev_word_full:
                 continue
             return self._note_rgb_for_event_ts(ev.timestamp)
-        return (255, 255, 255)
+        return (142, 204, 255)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -381,27 +409,32 @@ class WordRenderer:
         word_y_offset = g.word_current_y - g.word_normal_y
 
         # Compute repeat styling for current word.
-        # Only style from the 2nd occurrence onward (seen >= 2) so the first
-        # time you encounter a word it's always plain white.
+        # Repeat words are styled from their FIRST appearance:
+        #   1st time: orange, full size
+        #   2nd time: blue, −3% smaller
+        #   3rd time: pink, −6% smaller  … cycling through impulse particle colors
         repeat_color = None
         repeat_scale_bonus = 0.0
         if current_word:
             seen, total = self._repeat_info(current_word)
-            if total > 1 and seen >= 2:
-                # idx 0 = first repeat (orange), 1 = blue, 2 = pink, 3 = green …
-                idx = seen - 2
+            if total > 1 and seen >= 1:
+                idx = seen - 1   # 0 = first appearance
                 repeat_color = _REPEAT_COLORS[idx % len(_REPEAT_COLORS)]
-                # Each repeat makes it marginally larger: +3% per repeat, capped at +20%
-                repeat_scale_bonus = min(0.20, idx * 0.03)
+                # Each subsequent appearance is marginally smaller (max −15%)
+                repeat_scale_bonus = -min(0.15, idx * 0.03)
 
-        # Note-based text colors for all three carousel positions
+        # Note-based text colors for all three carousel positions.
+        # Use full (non-truncated) word texts so ev.word_text comparisons match correctly.
+        next_word_full = self._get_next_full_word_text()
         cur_note_color  = self._current_word_note_color() if current_word else None
-        next_note_color = (self._word_note_color(next_word, g.rhythm.char_event_idx)
-                           if next_word else None)
-        prev_note_color = (self._prev_word_note_color(g._previous_word)
-                           if g._previous_word else None)
+        next_note_color = (self._word_note_color(next_word_full, g.rhythm.char_event_idx)
+                           if next_word_full else None)
+        prev_note_color = (self._prev_word_note_color(g._previous_word_full)
+                           if g._previous_word_full else None)
 
         if current_word:
+            # Repeat words override the note color with the cycling repeat color
+            _cur_color = repeat_color if repeat_color is not None else cur_note_color
             self.draw_word_animated(
                 current_word,
                 position='center',
@@ -411,7 +444,7 @@ class WordRenderer:
                 y_offset=word_y_offset,
                 repeat_color=repeat_color,
                 repeat_scale_bonus=repeat_scale_bonus,
-                word_color=cur_note_color,
+                word_color=_cur_color,
             )
 
         if next_word:
@@ -439,3 +472,4 @@ class WordRenderer:
 
         if transition_progress >= 1.0:
             g._previous_word = current_word
+            g._previous_word_full = g.rhythm.current_expected_word()
