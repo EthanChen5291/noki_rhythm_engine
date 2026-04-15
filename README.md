@@ -1,6 +1,6 @@
 # Noki
 
-<img src="assets/images/noki_preview.png" alt="Noki Preview" width="600">
+<img src="assets/images/noki_preview.png" alt="Noki Preview" width="980">
 
 > A rhythm-based typing system that trains touch-typing by syncing input to visual beats.
 > Music becomes interactive typing challenges — making practice engaging and habit-forming.
@@ -11,11 +11,6 @@
 - **Custom parsing pipeline** that converts audio features into precisely timed input events
 - **4 difficulty modes**: Journey, Classic, Master, Demon — scaling from beginner to extreme
 - **Dynamic scroll speed** that responds to song intensity in real time
-- **Bounce Mode** — timeline reverses direction on high-energy beats
-- **Dual-Side Mode** — notes stream from both directions during climax sections
-- **Hold notes** detected automatically from low-intensity audio regions
-- **Repeat word system** with color-cycling visual indicators per occurrence
-- **Animated cat mascot (Noki)** with state-based sprite sequences
 - **Persistent high scores** per song and difficulty
 - **Custom song support** via file upload with optional BPM override
 - **Canon song library** with 14+ built-in tracks
@@ -68,6 +63,8 @@
 | System Dependency | FFmpeg (required by librosa) |
 
 ## 🚀 Quick Start
+
+<img src="assets/images/noki_preview2.png" alt="Noki Preview 2" width="980">
 
 ### Prerequisites
 
