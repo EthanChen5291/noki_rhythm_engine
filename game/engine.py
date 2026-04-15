@@ -192,6 +192,27 @@ class Game(EffectsMixin, MechanicsMixin):
             pygame.image.load(os.path.join(assets_path, 'glowed_hitmarker_golden.png')).convert_alpha(),
             (_hm_w, _hm_h)
         )
+        # One-shot frame lists for speed-up / slow-down hitmarker overlays
+        def _load_seq_frames(folder, scale):
+            d = os.path.join(assets_path, folder)
+            if not os.path.isdir(d):
+                return []
+            paths = sorted(p for p in (os.path.join(d, f) for f in os.listdir(d)) if p.lower().endswith('.png'))
+            return [pygame.transform.smoothscale(pygame.image.load(p).convert_alpha(), scale) for p in paths]
+
+        self._speed_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed_hitmarker', (_hm_w, _hm_h))
+        self._slow_hitmarker_frames:  list[pygame.Surface] = _load_seq_frames('slow_hitmarker',  (_hm_w, _hm_h))
+
+        _ml_w, _ml_h = self._measureline_img.get_size()
+        self._speed_measureline_frames: list[pygame.Surface] = _load_seq_frames('measureline_speed', (_ml_w, _ml_h))
+        self._slow_measureline_frames:  list[pygame.Surface] = _load_seq_frames('measureline_slow',  (_ml_w, _ml_h))
+
+        # Current speed animation state + one-shot frame counters
+        self._speed_anim_state: str  = 'normal'
+        self._prev_speed_anim_state: str = 'normal'
+        self._hitmarker_anim_frame:   float = 0.0
+        self._measureline_anim_frame: float = 0.0
+
         # Glow flash state: elapsed seconds since trigger, -1 = inactive
         self._glow_press_t: float = -1.0
 
@@ -644,6 +665,37 @@ class Game(EffectsMixin, MechanicsMixin):
         # Advance fast note sprite animations
         for _seq in self.fast_note_sprites.values():
             _seq.advance(dt)
+
+        # Update speed/slow anim state and advance those sequences
+        _song_t = current_time - self.rhythm.lead_in
+        _active_shift = None
+        for _shift in self.energy_shifts:
+            if _shift.start_time <= _song_t < _shift.end_time:
+                _active_shift = _shift
+                break
+        if _active_shift is None or 0.9 < _active_shift.scroll_modifier < 1.1:
+            self._speed_anim_state = 'normal'
+        elif _active_shift.scroll_modifier >= 1.1:
+            self._speed_anim_state = 'speed_up'
+        else:
+            self._speed_anim_state = 'slow_down'
+
+        # Reset one-shot frame counters when state changes
+        if self._speed_anim_state != self._prev_speed_anim_state:
+            self._hitmarker_anim_frame = 0.0
+            self._measureline_anim_frame = 0.0
+            self._prev_speed_anim_state = self._speed_anim_state
+
+        # Advance frame counters (stop at end — no looping)
+        if self._speed_anim_state == 'speed_up':
+            _anim_fps = 14.0
+        elif self._speed_anim_state == 'slow_down':
+            _anim_fps = 12.0
+        else:
+            _anim_fps = 0.0
+        self._hitmarker_anim_frame += _anim_fps * dt
+        self._measureline_anim_frame += _anim_fps * dt
+
         self.update_hitmarker_glow(dt)
 
         self.update_cat_animation()

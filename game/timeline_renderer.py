@@ -125,18 +125,36 @@ class TimelineRenderer:
         )
 
         _hm_rect = g.hitmarker_img.get_rect(center=(int(hit_marker_x), timeline_y))
-        g.screen.blit(g.hitmarker_img, _hm_rect)
+
+        # --- speed/slow hitmarker (one-shot); hides static hitmarker + glow while playing
+        _spd_state = g._speed_anim_state
+        _hm_fi = int(g._hitmarker_anim_frame)
+        _hm_anim_playing = False
+        if _spd_state == 'speed_up':
+            _hm_frames = g._speed_hitmarker_frames
+            if _hm_frames and _hm_fi < len(_hm_frames):
+                g.screen.blit(_hm_frames[_hm_fi], _hm_rect)
+                _hm_anim_playing = True
+        elif _spd_state == 'slow_down':
+            _hm_frames = g._slow_hitmarker_frames
+            if _hm_frames and _hm_fi < len(_hm_frames):
+                g.screen.blit(_hm_frames[_hm_fi], _hm_rect)
+                _hm_anim_playing = True
+
+        if not _hm_anim_playing:
+            g.screen.blit(g.hitmarker_img, _hm_rect)
 
         # --- hitmarker glow overlays (press = white flash, hold = persistent golden)
-        _press_a = g._glow_alpha(g._glow_press_t)
-        if _press_a > 0:
-            _glow = g.glowed_hitmarker_img.copy()
-            _glow.fill((255, 255, 255, _press_a), special_flags=pygame.BLEND_RGBA_MULT)
-            g.screen.blit(_glow, _hm_rect)
-        if g.rhythm._active_hold is not None:
-            _glow = g.glowed_hitmarker_golden_img.copy()
-            _glow.fill((255, 255, 255, 178), special_flags=pygame.BLEND_RGBA_MULT)
-            g.screen.blit(_glow, _hm_rect)
+        if not _hm_anim_playing:
+            _press_a = g._glow_alpha(g._glow_press_t)
+            if _press_a > 0:
+                _glow = g.glowed_hitmarker_img.copy()
+                _glow.fill((255, 255, 255, _press_a), special_flags=pygame.BLEND_RGBA_MULT)
+                g.screen.blit(_glow, _hm_rect)
+            if g.rhythm._active_hold is not None:
+                _glow = g.glowed_hitmarker_golden_img.copy()
+                _glow.fill((255, 255, 255, 178), special_flags=pygame.BLEND_RGBA_MULT)
+                g.screen.blit(_glow, _hm_rect)
 
         # --- beat grid lines
         beat_times = g.song.beat_times
@@ -152,8 +170,17 @@ class TimelineRenderer:
 
             if timeline_start_x <= x <= timeline_end_x:
                 if i % 4 == 0:
-                    g.screen.blit(g._measureline_img,
-                                  g._measureline_img.get_rect(center=(int(x), timeline_y)))
+                    _ml_fi = int(g._measureline_anim_frame)
+                    _ml_surf = g._measureline_img
+                    if _spd_state == 'speed_up':
+                        _ml_frames = g._speed_measureline_frames
+                        if _ml_frames and _ml_fi < len(_ml_frames):
+                            _ml_surf = _ml_frames[_ml_fi]
+                    elif _spd_state == 'slow_down':
+                        _ml_frames = g._slow_measureline_frames
+                        if _ml_frames and _ml_fi < len(_ml_frames):
+                            _ml_surf = _ml_frames[_ml_fi]
+                    g.screen.blit(_ml_surf, _ml_surf.get_rect(center=(int(x), timeline_y)))
                 else:
                     g.screen.blit(g._beatline_img,
                                   g._beatline_img.get_rect(center=(int(x), timeline_y)))

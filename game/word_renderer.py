@@ -297,18 +297,22 @@ class WordRenderer:
                 if glow_surf:
                     base_glow_size = int(110 * final_scale)
                     if char in _DESCENDER_LETTERS:
-                        glow_size = base_glow_size
+                        glow_w = base_glow_size
+                        glow_h = base_glow_size
                         glow_y_shift = int(base_glow_size * 0.08)
                     elif char in _SHORT_LETTERS:
-                        glow_size = int(base_glow_size * 0.6)
+                        # 10% more stretched in both dimensions
+                        glow_w = int(base_glow_size * 0.6 * 1.1)
+                        glow_h = int(base_glow_size * 0.6 * 1.1)
                         glow_y_shift = int(base_glow_size * 0.05)
                     else:
-                        glow_size = base_glow_size
+                        glow_w = base_glow_size
+                        glow_h = base_glow_size
                         glow_y_shift = 0
-                    glow_scaled = pygame.transform.smoothscale(glow_surf, (glow_size, glow_size))
+                    glow_scaled = pygame.transform.smoothscale(glow_surf, (glow_w, glow_h))
                     glow_scaled.set_alpha(int(final_alpha * 0.8))
-                    gx = int(char_x + char_font.size(char)[0] / 2 - glow_size / 2)
-                    gy = int(char_y + font_size / 2 - glow_size / 2) + glow_y_shift
+                    gx = int(char_x + char_font.size(char)[0] / 2 - glow_w / 2)
+                    gy = int(char_y + font_size / 2 - glow_h / 2) + glow_y_shift
                     g.screen.blit(glow_scaled, (gx, gy))
 
             char_surface = char_font.render(char, True, current_color)

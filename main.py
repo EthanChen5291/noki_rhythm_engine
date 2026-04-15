@@ -8,6 +8,7 @@ from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
+# calculate and record bpm ingame live
 
 # add perfect/great/ok text that lerps in and out as well as combo text
 # if combo, make it glow gold 
