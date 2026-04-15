@@ -1,7 +1,8 @@
 {
   "Disturbing the Peace.mp3": {
     "classic": 77161,
-    "master": 133378
+    "master": 133378,
+    "demon": 20150
   },
   "Playful Massacre.mp3": {
     "classic": 47085,
@@ -119,5 +120,11 @@
   },
   "Orbit - Full OST  Geometry Dash Level.mp3": {
     "demon": 32411
+  },
+  "maimaiOshama Scramble!tpazolite.mp3": {
+    "demon": 57275
+  },
+  "KillerBeast.mp3": {
+    "demon": 128520
   }
 }

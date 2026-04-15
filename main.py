@@ -133,10 +133,13 @@ def main():
 
         # ==========================TO DO LIST
         
+
         # hearts circle around the cat's neck -> when lose a life, one of the hearts flies to the hitmarker and becomes the hitmarker
         # 2 second cooldown -> hitmarker flashes during cooldown and fly to hitmarker animation plays. 
         # hitmarker is gray and skinny and then becomes the heart's color and becomes thicker and glows.
 
+        # upon bounce, make the markers bend animation. same for speedups and slowdowns to a certain extent.
+        
         # for repeat notes, make the word (like the word text itself) orange the first time and get marginally larger and swap colors between the colors of the impulse particles every time that word passes
     
         # remove signs 
