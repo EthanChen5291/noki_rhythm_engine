@@ -24,6 +24,7 @@ from .menu_utils import (
 )
 from .ui_components import Button, Petal
 from .screens import TitleScreen, LevelSelect, LevelMenu, FileUploadScreen
+from . import audio_manager as _audio
 
 
 # ─── Menu manager ─────────────────────────────────────────────────────────────
@@ -242,6 +243,7 @@ class MenuManager:
                     action = self.title_screen.update(dt, mouse_pos, mouse_clicked, current_time)
                     self.title_screen.draw(current_time)
                     if action == "play":
+                        _audio.play_click()
                         if self._music:
                             self._music.on_play_pressed()
                         self._start_transition("level_select",
@@ -259,6 +261,7 @@ class MenuManager:
                     lm_action = self._level_menu.update(dt, mouse_pos, mouse_clicked, current_time, events)
                     self._level_menu.draw(current_time)
                     if lm_action == "play":
+                        _audio.play_level_click()
                         self._pending_difficulty = self._level_menu._diff.difficulty
                         li = self._level_menu.song_idx
                         # persist BPM for custom songs
@@ -323,6 +326,7 @@ class MenuManager:
                     self.level_select._full_names[rename_idx] = new_name
                     self.level_select.level_buttons[rename_idx].text = new_name
                 elif action == "select":
+                    _audio.play_click()
                     diff_idx  = self.level_select.difficulty_selectors[idx].selected
                     _btn      = self.level_select.level_buttons[idx]
                     _vis_y    = _btn.rect.y - self.level_select.scroll_offset

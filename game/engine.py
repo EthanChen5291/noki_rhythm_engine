@@ -75,9 +75,9 @@ class Game(EffectsMixin, MechanicsMixin):
         _PERFECT_COLOR = (0xFF, 0xDE, 0x7B)
         _GOOD_COLOR    = (0x83, 0xE3, 0xB0)
         _OK_COLOR      = (0xAE, 0xD0, 0xE6)
-        _jf_ok      = pygame.font.Font(_hv_path, 18)
-        _jf_good    = pygame.font.Font(_hv_path, 21)
-        _jf_perfect = pygame.font.Font(_hv_path, 25)
+        _jf_ok      = pygame.font.Font(_hv_path, 17)
+        _jf_good    = pygame.font.Font(_hv_path, 20)
+        _jf_perfect = pygame.font.Font(_hv_path, 24)
         self._judgment_glow_cache: dict[str, pygame.Surface] = {
             'perfect': _make_glow_surface(_jf_perfect, 'PERFECT', _PERFECT_COLOR, _PERFECT_COLOR, glow_opacity=0.30),
             'good':    _make_glow_surface(_jf_good,    'GOOD',    _GOOD_COLOR,    _GOOD_COLOR,    glow_opacity=0.24),
@@ -241,8 +241,9 @@ class Game(EffectsMixin, MechanicsMixin):
         _hm_base_size = _hm_raw.get_size()
         _speed_hm_w = round(_hm_w * 1.08)
         _speed_hm_h = round(_hm_h * 1.01)
-        self._speed_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed_hitmarker', (_speed_hm_w, _speed_hm_h), _hm_base_size)
-        self._slow_hitmarker_frames:  list[pygame.Surface] = _load_seq_frames('slow_hitmarker',  (_hm_w, _hm_h), _hm_base_size)
+        self._speed_hitmarker_frames:  list[pygame.Surface] = _load_seq_frames('speed_hitmarker',  (_speed_hm_w, _speed_hm_h), _hm_base_size)
+        self._speed2_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed2_hitmarker', (_speed_hm_w, _speed_hm_h), _hm_base_size)
+        self._slow_hitmarker_frames:   list[pygame.Surface] = _load_seq_frames('slow_hitmarker',   (_hm_w, _hm_h), _hm_base_size)
 
         _ml_w, _ml_h = self._measureline_img.get_size()
         _ml_raw = pygame.image.load(os.path.join(assets_path, 'measureline.png'))
@@ -442,10 +443,13 @@ class Game(EffectsMixin, MechanicsMixin):
         self.scroll_speed      = self.base_scroll_speed * self.pace_bias
 
         # --- outro deceleration ---
-        self._outro_active     = False
-        self._outro_start_time = 0.0
-        self._outro_dur        = 3.0
-        self._outro_start_spd  = 0.0
+        self._outro_active          = False
+        self._outro_start_time      = 0.0
+        self._outro_dur             = 3.0
+        self._outro_start_spd       = 0.0
+        self._outro_finish_started  = False   # levelfinish audio fired at 1 s mark
+        self._finish_needed         = False   # set when outro completes normally
+        self._finish_snapshot: 'pygame.Surface | None' = None
 
         _silence_start = self.song.duration
         _bt = self.song.beat_times
@@ -544,7 +548,7 @@ class Game(EffectsMixin, MechanicsMixin):
         pygame.mixer.music.play()
 
         # --- hitsound ---
-        _hitsound_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'audios', 'hitsound.mp3')
+        _hitsound_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'audios', 'effects', 'hitsound.mp3')
         self._hitsound: pygame.mixer.Sound | None = None
         try:
             self._hitsound = pygame.mixer.Sound(_hitsound_path)
@@ -584,9 +588,10 @@ class Game(EffectsMixin, MechanicsMixin):
             current_time, timeline_y, timeline_start_x, timeline_end_x, hit_marker_x)
 
     def run(self):
-        """Run the game loop. Returns 'menu' if player exits to menu, None otherwise."""
+        """Run the game loop. Returns 'replay', 'menu', or None."""
         self.running = True
-        self._exit_to_menu = False
+        self._exit_to_menu   = False
+        self._exit_to_replay = False
         while self.running:
             dt = self.clock.tick(60) / 1000
             if self.paused:
@@ -596,7 +601,29 @@ class Game(EffectsMixin, MechanicsMixin):
             pygame.display.flip()
 
         pygame.mixer.music.stop()
+
+        if self._finish_needed and not self._exit_to_menu:
+            result = self._run_finish_screen()
+            if result == "replay":
+                return "replay"
+
         return "menu" if self._exit_to_menu else None
+
+    def _run_finish_screen(self) -> str:
+        """Create and run the post-level finish screen. Returns 'replay' or 'exit'."""
+        from .screens.finish_screen import FinishScreen
+        level_name = os.path.splitext(os.path.basename(self.level.song_path))[0]
+        backdrop = self._finish_snapshot or self.screen.copy()
+        fs = FinishScreen(
+            screen=self.screen,
+            clock=self.clock,
+            backdrop=backdrop,
+            level_name=level_name,
+            score=self.score,
+            total_notes=len(self.rhythm.beat_map),
+            misses=self.rhythm.miss_count,
+        )
+        return fs.run()
 
     def _enter_pause(self):
         self.paused = True
@@ -722,8 +749,10 @@ class Game(EffectsMixin, MechanicsMixin):
                 break
         if _active_shift is None or 0.9 < _active_shift.scroll_modifier < 1.1:
             _energy_state = 'normal'
-        elif _active_shift.scroll_modifier >= 1.1:
+        elif _active_shift.scroll_modifier >= 1.2:
             _energy_state = 'speed_up'
+        elif _active_shift.scroll_modifier >= 1.1:
+            _energy_state = 'speed_up_mild'
         else:
             _energy_state = 'slow_down'
 
@@ -748,17 +777,19 @@ class Game(EffectsMixin, MechanicsMixin):
         # --- bounce direction change: affect both hitmarker + measureline
         # going right → left (reversed becomes True): slow_hitmarker (deceleration feel)
         # going left → right (reversed becomes False): speed_hitmarker (acceleration feel)
-        if self.bounce_active:
-            if self.bounce_reversed and not _was_bounce_reversed:
-                _set_hm('slow_down')
-                _set_ml('slow_down')
-            elif not self.bounce_reversed and _was_bounce_reversed:
-                _set_hm('speed_up')
-                _set_ml('speed_up')
+        # The slow_down check requires bounce_active to avoid false positives.
+        # The speed_up check is intentionally outside bounce_active so it also fires
+        # when the section ends and bounce_reversed resets to False.
+        if self.bounce_active and self.bounce_reversed and not _was_bounce_reversed:
+            _set_hm('slow_down')
+            _set_ml('slow_down')
+        elif _was_bounce_reversed and not self.bounce_reversed:
+            _set_hm('speed_up')
+            _set_ml('speed_up')
 
         # --- advance frame counters (stop at end — no looping)
-        self._hitmarker_anim_frame   += (14.0 if self._hitmarker_anim_state   == 'speed_up' else 12.0 if self._hitmarker_anim_state   == 'slow_down' else 0.0) * dt
-        self._measureline_anim_frame += (14.0 if self._measureline_anim_state == 'speed_up' else 12.0 if self._measureline_anim_state == 'slow_down' else 0.0) * dt
+        self._hitmarker_anim_frame   += (14.0 if self._hitmarker_anim_state   in ('speed_up', 'speed_up_mild') else 12.0 if self._hitmarker_anim_state   == 'slow_down' else 0.0) * dt
+        self._measureline_anim_frame += (14.0 if self._measureline_anim_state in ('speed_up', 'speed_up_mild') else 12.0 if self._measureline_anim_state == 'slow_down' else 0.0) * dt
 
         self.update_hitmarker_glow(dt)
         self._hm_shake_t = max(0.0, self._hm_shake_t - dt)
@@ -813,9 +844,15 @@ class Game(EffectsMixin, MechanicsMixin):
             ease = 1.0 - (1.0 - t) ** 3
             _min_spd = self._outro_start_spd * 0.15
             self.scroll_speed = max(_min_spd, self._outro_start_spd * (1.0 - ease * 0.85))
+            # At 1 second into outro: stop song, start finish audio (menu appears 1 s later)
+            if outro_elapsed >= 1.0 and not self._outro_finish_started:
+                self._outro_finish_started = True
+                pygame.mixer.music.stop()
+                from . import audio_manager as _am
+                _am.play_level_finish()
             if outro_elapsed >= self._outro_dur:
-                self.show_message("Congratulations!", 5)
-                self._exit_to_menu = True
+                self._finish_snapshot = self.screen.copy()
+                self._finish_needed   = True
                 self.running = False
                 return
             self.render_timeline()

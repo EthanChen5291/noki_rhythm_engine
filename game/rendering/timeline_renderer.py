@@ -173,6 +173,11 @@ class TimelineRenderer:
             if _hm_frames and _hm_fi < len(_hm_frames):
                 _scaled_blit(_hm_frames[_hm_fi])
                 _hm_anim_playing = True
+        elif _hm_state == 'speed_up_mild':
+            _hm_frames = g._speed2_hitmarker_frames
+            if _hm_frames and _hm_fi < len(_hm_frames):
+                _scaled_blit(_hm_frames[_hm_fi])
+                _hm_anim_playing = True
         elif _hm_state == 'slow_down':
             _hm_frames = g._slow_hitmarker_frames
             if _hm_frames and _hm_fi < len(_hm_frames):
@@ -349,7 +354,7 @@ class TimelineRenderer:
             for _ in range(3):
                 _small = pygame.transform.smoothscale(_blurred, (max(1, _gw // 5), max(1, _gh // 5)))
                 _blurred = pygame.transform.smoothscale(_small, (_gw, _gh))
-            _blurred.fill((100, 200, 255, 90), special_flags=pygame.BLEND_RGBA_MULT)
+            _blurred.fill((100, 200, 255, 45), special_flags=pygame.BLEND_RGBA_MULT)
             g.screen.blit(_blurred, (bar_x - _gp, bar_y - _gp), special_flags=pygame.BLEND_RGBA_ADD)
 
         # White border

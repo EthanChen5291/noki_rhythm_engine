@@ -8,7 +8,9 @@ from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
-# calculate and record bpm ingame live
+# 
+
+# calculate and record bpm ingame live -> return in finish menu
 
 # add perfect/great/ok text that lerps in and out as well as combo text
 # if combo, make it glow gold 
@@ -221,18 +223,23 @@ def main():
         # Ariana Grande - Problem ft. Iggy Azalea 
         # words synced to song? is word detection from audio possible?
 
-        music.pause_for_game()
-        game = Game(level=level, screen=screen, clock=clock, music=music)
-        game.run()
-        music.resume_from_game()
+        # Inner replay loop — keeps replaying the same level until player exits
+        while True:
+            music.pause_for_game()
+            game = Game(level=level, screen=screen, clock=clock, music=music)
+            game_result = game.run()
+            music.resume_from_game()
 
-        # Persist top score for this song + difficulty
-        song_key = SONG_NAMES[selected]
-        scores   = _load_scores()
-        prev     = scores.get(song_key, {}).get(difficulty, 0)
-        if game.score > prev:
-            scores.setdefault(song_key, {})[difficulty] = game.score
-            _save_scores(scores)
+            # Persist top score for this song + difficulty
+            song_key = SONG_NAMES[selected]
+            scores   = _load_scores()
+            prev     = scores.get(song_key, {}).get(difficulty, 0)
+            if game.score > prev:
+                scores.setdefault(song_key, {})[difficulty] = game.score
+                _save_scores(scores)
+
+            if game_result != "replay":
+                break
 
         menu.reset_for_return("level_select")
 

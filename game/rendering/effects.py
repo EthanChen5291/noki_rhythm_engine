@@ -118,7 +118,7 @@ class EffectsMixin:
         song_time = elapsed - self.rhythm.lead_in
         beat_times = self.song.beat_times
 
-        BOP_MAX_BPM = 220.0  # clamp animation speed to this BPM; halve if faster
+        BOP_MAX_BPM = 250.0  # clamp animation speed to this BPM; halve if faster
 
         if beat_times and len(beat_times) >= 2 and song_time >= beat_times[0]:
             current_beat_idx = 0
@@ -458,9 +458,10 @@ class EffectsMixin:
         lbl['t'] += dt
 
         _SPIN_DUR  = 0.16  # fast spin-in + size pop
-        _HOLD_DUR  = 1.0   # seconds to hold
+        _HOLD_DUR  = 0.5   # seconds to hold
         _FADE_DUR  = 0.35  # seconds to fade out
         _TOTAL     = _SPIN_DUR + _HOLD_DUR + _FADE_DUR
+        _MAX_ALPHA = 229   # 90% opacity
         _START     = math.pi / 3    # start angle
         _TARGET    = math.pi / 2.2  # target angle
         t = lbl['t']
@@ -476,12 +477,12 @@ class EffectsMixin:
         else:
             scale = 1.0
 
-        # alpha: full opacity immediately during spin-in, fade out at end
+        # alpha: 90% opacity immediately during spin-in, fade out at end
         if t < _SPIN_DUR + _HOLD_DUR:
-            alpha = 255
+            alpha = _MAX_ALPHA
         else:
             fade_progress = (t - _SPIN_DUR - _HOLD_DUR) / _FADE_DUR
-            alpha = int((1.0 - fade_progress) * 255)
+            alpha = int((1.0 - fade_progress) * _MAX_ALPHA)
 
         # rotation: lerps _START → _TARGET during spin-in, then holds
         if t < _SPIN_DUR:

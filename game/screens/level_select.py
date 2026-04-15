@@ -20,6 +20,7 @@ import random
 import pygame
 
 from ..menu_utils import _FONT
+from .. import audio_manager as _audio
 from ..ui_components import (
     _EXIT_IMG,
     Button,
@@ -370,6 +371,8 @@ class LevelSelect:
         if mouse_clicked:
             for t, tr in enumerate(self._tab_rects):
                 if tr.collidepoint(mouse_pos):
+                    if t != self._active_tab:
+                        _audio.play_click()
                     self.switch_tab(t)
 
         self._upload_hovered = self.upload_rect.collidepoint(mouse_pos)
