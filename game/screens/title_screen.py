@@ -64,7 +64,7 @@ class TitleScreen:
         self._scale       = 1.0
         self._click_phase: str | None = None  # None | "shrink" | "bounce"
 
-        # ── Settings circle (left of play button, same height) ────────────────
+        # ── Settings button (left of play button, same height) ────────────────
         _gap = int(btn_size * 0.32)
         _total = btn_size * 2 + _gap
         _orig_cx = self.btn_cx
@@ -72,9 +72,20 @@ class TitleScreen:
         self.btn_cx       = _orig_cx + _total // 2 - btn_size // 2
         self._settings_cy = self.btn_cy
         self._settings_r  = btn_size // 2   # same radius as play button
-        self._settings_scale  = 1.0
+        self._settings_scale        = 1.0
+        self._settings_scale_target = 1.0
         self._settings_hovered = False
         self._settings_panel: SettingsPanel | None = None
+
+        # noki_settingsmain image (replaces programmatic circle/gear) — 5% taller
+        self._settings_base_w = btn_size
+        self._settings_base_h = int(btn_size * 1.05)
+        _raw_settings_img = pygame.image.load(
+            os.path.join(_ASSETS, "noki_settingsmain.png")
+        ).convert_alpha()
+        self._settings_img = pygame.transform.smoothscale(
+            _raw_settings_img, (self._settings_base_w, self._settings_base_h)
+        )
 
         # Exposed so MenuManager can use it as the transition origin
         self.play_button_rect = pygame.Rect(
@@ -117,9 +128,10 @@ class TitleScreen:
         self._title_scale_target = 1.0
         self._scale              = 1.0
         self._click_phase        = None
-        self._settings_scale     = 1.0
-        self._settings_hovered   = False
-        self._settings_panel     = None
+        self._settings_scale        = 1.0
+        self._settings_scale_target = 1.0
+        self._settings_hovered      = False
+        self._settings_panel        = None
         self._video.reset()
 
     def update(self, dt: float, mouse_pos: tuple, mouse_clicked: bool,
@@ -200,24 +212,13 @@ class TitleScreen:
         btn_surf  = pygame.transform.smoothscale(self._btn_base, (disp_size, disp_size))
         self.screen.blit(btn_surf, btn_surf.get_rect(center=(self.btn_cx, self.btn_cy)))
 
-        # Settings circle
-        sr = max(1, int(self._settings_r * self._settings_scale))
-        cx, cy = self._settings_cx, self._settings_cy
-        pygame.draw.circle(self.screen, (18, 18, 28), (cx, cy), sr)
-        outline_col = (220, 220, 220) if self._settings_hovered else (160, 160, 160)
-        pygame.draw.circle(self.screen, outline_col, (cx, cy), sr, 2)
-        # Gear hint: small inner ring + 6 tick marks
-        inner_r = max(2, sr // 3)
-        pygame.draw.circle(self.screen, outline_col, (cx, cy), inner_r, 1)
-        for i in range(6):
-            angle = math.radians(i * 60)
-            tick_inner = sr - sr // 4
-            tick_outer = sr - 2
-            x1 = int(cx + tick_inner * math.cos(angle))
-            y1 = int(cy + tick_inner * math.sin(angle))
-            x2 = int(cx + tick_outer * math.cos(angle))
-            y2 = int(cy + tick_outer * math.sin(angle))
-            pygame.draw.line(self.screen, outline_col, (x1, y1), (x2, y2), 2)
+        # Settings image button
+        s_w = max(1, int(self._settings_base_w * self._settings_scale))
+        s_h = max(1, int(self._settings_base_h * self._settings_scale))
+        settings_surf = pygame.transform.smoothscale(self._settings_img, (s_w, s_h))
+        settings_surf.set_alpha(255)
+        self.screen.blit(settings_surf, settings_surf.get_rect(
+            center=(self._settings_cx, self._settings_cy)))
 
         # Settings panel (on top of everything)
         if self._settings_panel is not None:
@@ -231,10 +232,12 @@ class TitleScreen:
         return r.collidepoint(mouse_pos)
 
     def _settings_hovered_check(self, mouse_pos: tuple) -> bool:
-        sr = int(self._settings_r * self._settings_scale)
-        dx = mouse_pos[0] - self._settings_cx
-        dy = mouse_pos[1] - self._settings_cy
-        return dx * dx + dy * dy <= sr * sr
+        s_w = int(self._settings_base_w * self._settings_scale)
+        s_h = int(self._settings_base_h * self._settings_scale)
+        r = pygame.Rect(
+            self._settings_cx - s_w // 2, self._settings_cy - s_h // 2, s_w, s_h
+        )
+        return r.collidepoint(mouse_pos)
 
     def _update_click_animation(self, dt: float, hovered: bool) -> str | None:
         """Drive shrink → bounce.  Returns 'play' when the bounce finishes."""
@@ -262,8 +265,9 @@ class TitleScreen:
         # Detect a new beat
         beat_idx = int(current_time / self._beat_period)
         if beat_idx != self._last_beat:
-            self._last_beat          = beat_idx
-            self._title_scale_target = BEAT_TITLE_PEAK
+            self._last_beat               = beat_idx
+            self._title_scale_target      = BEAT_TITLE_PEAK
+            self._settings_scale_target   = BEAT_BTN_PEAK
             if not hovered:
                 self._scale = 1.0 + (BEAT_BTN_PEAK - 1.0)
 
@@ -275,6 +279,7 @@ class TitleScreen:
         base_target = BTN_HOVER_SCALE if hovered else 1.0
         self._scale += (base_target - self._scale) * min(1.0, BTN_LERP_NORMAL * dt)
 
-        # Settings circle hover scale
-        s_target = 1.08 if self._settings_hovered else 1.0
-        self._settings_scale += (s_target - self._settings_scale) * min(1.0, BTN_LERP_NORMAL * dt)
+        # Settings button: beat pulse decays toward hover/rest, then lerp scale
+        s_base = 1.08 if self._settings_hovered else 1.0
+        self._settings_scale_target += (s_base - self._settings_scale_target) * k
+        self._settings_scale        += (self._settings_scale_target - self._settings_scale) * k

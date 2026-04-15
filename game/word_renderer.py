@@ -26,6 +26,11 @@ _NOTE_COLOR_RGB: dict[str, tuple] = {
 # Reverse lookup: RGB tuple → color name (for glow image selection)
 _RGB_TO_COLOR_NAME: dict[tuple, str] = {v: k for k, v in _NOTE_COLOR_RGB.items()}
 
+# Letters whose glow is compressed 40% and shifted down 20% of glow height (x-height only)
+_SHORT_LETTERS: frozenset = frozenset('aceimnorstuvwxz')
+# Letters whose glow is shifted down 40% of glow height (descenders)
+_DESCENDER_LETTERS: frozenset = frozenset('gy')
+
 
 class WordRenderer:
 
@@ -290,11 +295,20 @@ class WordRenderer:
                 color_name = _RGB_TO_COLOR_NAME.get(current_color, 'white')
                 glow_surf = g.letter_glow_imgs.get(color_name)
                 if glow_surf:
-                    glow_size = int(110 * final_scale)
+                    base_glow_size = int(110 * final_scale)
+                    if char in _DESCENDER_LETTERS:
+                        glow_size = base_glow_size
+                        glow_y_shift = int(base_glow_size * 0.08)
+                    elif char in _SHORT_LETTERS:
+                        glow_size = int(base_glow_size * 0.6)
+                        glow_y_shift = int(base_glow_size * 0.05)
+                    else:
+                        glow_size = base_glow_size
+                        glow_y_shift = 0
                     glow_scaled = pygame.transform.smoothscale(glow_surf, (glow_size, glow_size))
-                    glow_scaled.set_alpha(final_alpha)
+                    glow_scaled.set_alpha(int(final_alpha * 0.8))
                     gx = int(char_x + char_font.size(char)[0] / 2 - glow_size / 2)
-                    gy = int(char_y + font_size / 2 - glow_size / 2)
+                    gy = int(char_y + font_size / 2 - glow_size / 2) + glow_y_shift
                     g.screen.blit(glow_scaled, (gx, gy))
 
             char_surface = char_font.render(char, True, current_color)

@@ -26,7 +26,8 @@ from analysis.audio_analysis import (
     detect_climax_shake_beats,
 )
 from . import models as M
-from .menu import PauseScreen, Button
+from .menu import PauseScreen
+from .screens import SettingsPanel
 from .menu_utils import _FONT
 from .effects import EffectsMixin
 from .mechanics import MechanicsMixin, BounceEvent
@@ -39,7 +40,7 @@ pygame.init()
 
 
 class Game(EffectsMixin, MechanicsMixin):
-    def __init__(self, level, screen=None, clock=None) -> None:
+    def __init__(self, level, screen=None, clock=None, music=None) -> None:
         if screen is not None:
             self.screen = screen
         else:
@@ -446,17 +447,31 @@ class Game(EffectsMixin, MechanicsMixin):
         self._timeline_shake_offset: float = 0.0
 
         # --- pause state ---
+        self._music = music
         self.paused = False
         self.pause_screen: PauseScreen | None = None
         self.pause_time_accumulated = 0.0
         self._pause_start = 0.0
-        pause_font = pygame.font.Font(_FONT, 36)
-        self.pause_button = Button(
-            (screen_width - 100, 20, 80, 40),
-            "II",
-            pause_font,
-            base_color=(120, 120, 120),
-            hover_color=(255, 255, 255),
+        self._in_level_settings: SettingsPanel | None = None
+
+        # --- in-level image buttons (leave + settings) ---
+        _btn_w, _btn_h = 80, 80
+        _btn_margin = 20
+        _leave_raw = pygame.image.load(
+            os.path.join(assets_path, 'leavebutton.png')
+        ).convert_alpha()
+        self._leave_img = pygame.transform.smoothscale(_leave_raw, (_btn_w, _btn_h))
+        self._leave_rect = pygame.Rect(
+            screen_width - _btn_margin - _btn_w, _btn_margin, _btn_w, _btn_h
+        )
+        _lvl_settings_raw = pygame.image.load(
+            os.path.join(assets_path, 'noki_settingsbutton.png')
+        ).convert_alpha()
+        self._level_settings_img = pygame.transform.smoothscale(
+            _lvl_settings_raw, (_btn_w, _btn_h)
+        )
+        self._level_settings_rect = pygame.Rect(
+            _btn_margin, _btn_margin, _btn_w, _btn_h
         )
 
         # --- renderer managers ---
@@ -541,7 +556,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self.pause_screen = None
         pygame.mixer.music.unpause()
 
-    def _update_paused(self, *_):
+    def _update_paused(self, dt: float):
         self.screen.blit(self._pause_snapshot, (0, 0))
 
         mouse_pos = pygame.mouse.get_pos()
@@ -551,10 +566,19 @@ class Game(EffectsMixin, MechanicsMixin):
                 self.running = False
                 return
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                self._in_level_settings = None
                 self._exit_pause()
                 return
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_clicked = True
+
+        if self._in_level_settings is not None:
+            result = self._in_level_settings.update(dt, mouse_pos, mouse_clicked)
+            self._in_level_settings.draw()
+            if result == "close":
+                self._in_level_settings = None
+                self._exit_pause()
+            return
 
         if self.pause_screen is not None:
             action = self.pause_screen.update(mouse_pos, mouse_clicked)
@@ -641,9 +665,14 @@ class Game(EffectsMixin, MechanicsMixin):
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mouse_clicked = True
 
-        self.pause_button.check_hover(mouse_pos)
-        if self.pause_button.check_click(mouse_pos, mouse_clicked):
-            pause_requested = True
+        if mouse_clicked and self._leave_rect.collidepoint(mouse_pos):
+            self._exit_to_menu = True
+            self.running = False
+            return
+        if mouse_clicked and self._level_settings_rect.collidepoint(mouse_pos):
+            self._enter_pause()
+            self._in_level_settings = SettingsPanel(self.screen, self._music, self._level_settings_rect)
+            return
 
         self.input.update(events=events)
         _hold_before_update = self.rhythm._active_hold
@@ -824,7 +853,8 @@ class Game(EffectsMixin, MechanicsMixin):
         score_text = self._score_font.render(f"{current_score}", True, (255, 255, 255))
         self.screen.blit(score_text, score_text.get_rect(bottomright=(sw - margin_x, sh - margin_y)))
 
-        self.pause_button.draw(self.screen, time.time())
+        self.screen.blit(self._leave_img, self._leave_rect)
+        self.screen.blit(self._level_settings_img, self._level_settings_rect)
 
         if pause_requested:
             self._enter_pause()

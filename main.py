@@ -12,6 +12,16 @@ from game.music import MusicManager
 # add perfect/great/ok text that lerps in and out as well as combo text
 # if combo, make it glow gold 
 
+# make hitmarker shake for 1 second when note goes by untouched
+
+# if wrong note is pressed, they can still press the same letter as long as the beat hasn't passed (but wrong animation still plays)  
+
+# firefly glowing around the mouse just like avesia 
+
+# remove custom level button
+
+#noki clamp animation
+
 # make the pause button the old exit button 
 
 # add title settings and level settings button
@@ -208,7 +218,7 @@ def main():
         # words synced to song? is word detection from audio possible?
 
         music.pause_for_game()
-        game = Game(level=level, screen=screen, clock=clock)
+        game = Game(level=level, screen=screen, clock=clock, music=music)
         game.run()
         music.resume_from_game()
         start_state = "level_select"
