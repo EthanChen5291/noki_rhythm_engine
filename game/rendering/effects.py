@@ -439,15 +439,16 @@ class EffectsMixin:
                 surviving.append(ring)
         self._perfect_rings = surviving
 
-        # --- draw rings
+        # --- draw rings (thicker stroke, lower opacity)
         for ring in self._perfect_rings:
             a = max(0, int(ring['alpha']))
             r = int(ring['radius'])
             if r < 1:
                 continue
-            ring_surf = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
-            pygame.draw.circle(ring_surf, (*ring['color'], a), (r + 2, r + 2), r, 2)
-            self.screen.blit(ring_surf, (int(ring['x']) - r - 2, int(ring['y']) - r - 2))
+            pad = 8
+            ring_surf = pygame.Surface((r * 2 + pad * 2, r * 2 + pad * 2), pygame.SRCALPHA)
+            pygame.draw.circle(ring_surf, (*ring['color'], a), (r + pad, r + pad), r, 5)
+            self.screen.blit(ring_surf, (int(ring['x']) - r - pad, int(ring['y']) - r - pad))
 
         # --- draw label
         if self._judgment_label is None:
@@ -456,36 +457,42 @@ class EffectsMixin:
         lbl = self._judgment_label
         lbl['t'] += dt
 
-        _SPIN_DUR  = 0.22  # seconds to spin in (quicker)
+        _SPIN_DUR  = 0.16  # fast spin-in + size pop
         _HOLD_DUR  = 1.0   # seconds to hold
         _FADE_DUR  = 0.35  # seconds to fade out
         _TOTAL     = _SPIN_DUR + _HOLD_DUR + _FADE_DUR
-        _TARGET    = math.pi / 2.2  # target rotation angle
+        _START     = math.pi / 3    # start angle
+        _TARGET    = math.pi / 2.2  # target angle
         t = lbl['t']
 
         if t >= _TOTAL:
             self._judgment_label = None
             return
 
-        # alpha
+        # scale: lerps 0.5 → 1.0 during spin-in (size pop), holds at 1.0 after
         if t < _SPIN_DUR:
-            alpha = int((t / _SPIN_DUR) * 255)
-        elif t < _SPIN_DUR + _HOLD_DUR:
+            p = t / _SPIN_DUR
+            scale = 0.5 + 0.5 * p
+        else:
+            scale = 1.0
+
+        # alpha: full opacity immediately during spin-in, fade out at end
+        if t < _SPIN_DUR + _HOLD_DUR:
             alpha = 255
         else:
             fade_progress = (t - _SPIN_DUR - _HOLD_DUR) / _FADE_DUR
             alpha = int((1.0 - fade_progress) * 255)
 
-        # rotation: angle lerps 0 → _TARGET during spin-in, then holds
+        # rotation: lerps _START → _TARGET during spin-in, then holds
         if t < _SPIN_DUR:
-            angle_rad = (t / _SPIN_DUR) * _TARGET
+            angle_rad = _START + (t / _SPIN_DUR) * (_TARGET - _START)
         else:
             angle_rad = _TARGET
         # pi/2 would be horizontal; convert to pygame degrees (0 = horizontal)
         pygame_deg = math.degrees(math.pi / 2 - angle_rad)
 
         # spawn perfect rings exactly when spin-in ends
-        if lbl['key'] == 'perfect' and not lbl['rings_spawned'] and t >= _SPIN_DUR and alpha == 255:
+        if lbl['key'] == 'perfect' and not lbl['rings_spawned'] and t >= _SPIN_DUR:
             lbl['rings_spawned'] = True
             _PERFECT_COLOR = (0xFF, 0xDE, 0x7B)
             count = _rnd.randint(2, 4)
@@ -494,13 +501,13 @@ class EffectsMixin:
                     'x': float(lbl['x']),
                     'y': float(lbl['y']),
                     'radius': float(_rnd.randint(4, 10)),
-                    'speed': float(_rnd.uniform(55, 110)),
-                    'alpha': float(_rnd.uniform(170, 220)),
-                    'fade_rate': float(_rnd.uniform(160, 240)),
+                    'speed': float(_rnd.uniform(350, 550)),    # much quicker travel
+                    'alpha': float(_rnd.uniform(68, 88)),      # 60% less opacity
+                    'fade_rate': float(_rnd.uniform(380, 520)), # quicker fade-out
                     'color': _PERFECT_COLOR,
                 })
 
         glow_surf = self._judgment_glow_cache[lbl['key']]
-        rotated = pygame.transform.rotozoom(glow_surf, pygame_deg, 1.0)
+        rotated = pygame.transform.rotozoom(glow_surf, pygame_deg, scale)
         rotated.set_alpha(alpha)
         self.screen.blit(rotated, rotated.get_rect(center=(lbl['x'], lbl['y'])))

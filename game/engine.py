@@ -71,7 +71,7 @@ class Game(EffectsMixin, MechanicsMixin):
 
         # --- judgment label (PERFECT / GOOD / OK) above hitmarker
         _hv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                'assets', 'images', 'fonts', 'Heavitas.ttf')
+                                'assets', 'fonts', 'Heavitas.ttf')
         _PERFECT_COLOR = (0xFF, 0xDE, 0x7B)
         _GOOD_COLOR    = (0x83, 0xE3, 0xB0)
         _OK_COLOR      = (0xAE, 0xD0, 0xE6)
@@ -102,8 +102,8 @@ class Game(EffectsMixin, MechanicsMixin):
         self.song_path = abs_song_path
 
         assets_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'images')
+        animations_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'animations')
 
-        import cv2 as _cv2
         # Match title screen: cat height = 38% of screen (title screen uses 40%).
         _bop_target_h = max(300, int(screen_height * 0.38))
         self._bop_frames: list[pygame.Surface] = []
@@ -144,7 +144,7 @@ class Game(EffectsMixin, MechanicsMixin):
             )
 
         def _load_hit_frames(folder):
-            d = os.path.join(assets_path, folder)
+            d = os.path.join(animations_path, folder)
             if not os.path.isdir(d):
                 return []
             paths = sorted(
@@ -169,7 +169,7 @@ class Game(EffectsMixin, MechanicsMixin):
         # Fast animated note sprites (PNG sequences) — shown when scroll_speed is high
         from .ui_components import PNGSequenceSprite as _PSS
         def _load_fast_seq(color_name):
-            folder = os.path.join(assets_path, f'{color_name}_fast')
+            folder = os.path.join(animations_path, f'{color_name}_fast')
             return _PSS(folder, fps=18.0, scale=(_NOTE_SPRITE_SIZE, _NOTE_SPRITE_SIZE))
         self.fast_note_sprites: dict[str, _PSS] = {
             'blue':   _load_fast_seq('blue'),
@@ -220,7 +220,7 @@ class Game(EffectsMixin, MechanicsMixin):
         # compute the proportional target size when an animation sheet has a wider
         # canvas than the base sprite so the visible sprite ends up the same size.
         def _load_seq_frames(folder, target_size, base_size=None):
-            d = os.path.join(assets_path, folder)
+            d = os.path.join(animations_path, folder)
             if not os.path.isdir(d):
                 return []
             paths = sorted(p for p in (os.path.join(d, f) for f in os.listdir(d)) if p.lower().endswith('.png'))
@@ -239,7 +239,9 @@ class Game(EffectsMixin, MechanicsMixin):
 
         _hm_raw = pygame.image.load(os.path.join(assets_path, 'hitmarker.png'))
         _hm_base_size = _hm_raw.get_size()
-        self._speed_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed_hitmarker', (_hm_w, _hm_h), _hm_base_size)
+        _speed_hm_w = round(_hm_w * 1.08)
+        _speed_hm_h = round(_hm_h * 1.01)
+        self._speed_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed_hitmarker', (_speed_hm_w, _speed_hm_h), _hm_base_size)
         self._slow_hitmarker_frames:  list[pygame.Surface] = _load_seq_frames('slow_hitmarker',  (_hm_w, _hm_h), _hm_base_size)
 
         _ml_w, _ml_h = self._measureline_img.get_size()
@@ -318,35 +320,25 @@ class Game(EffectsMixin, MechanicsMixin):
         _thread = _threading.Thread(target=_worker, daemon=True)
         _thread.start()
 
-        # ── Decode noki_bop / noki_hurt frames while analysis runs in bg ──
-        # cv2.resize on the numpy array before make_surface avoids creating
-        # a full 1920×1500 pygame surface for each frame (~10× faster).
-        def _decode_video_frames(path: str) -> tuple[list[pygame.Surface], float]:
+        # ── Load noki_bop / noki_hurt from PNG sequences ──
+        def _load_png_seq(folder_name: str) -> tuple[list[pygame.Surface], float]:
+            folder = os.path.join(animations_path, folder_name)
+            if not os.path.isdir(folder):
+                return [], 30.0
+            paths = sorted(
+                os.path.join(folder, f) for f in os.listdir(folder)
+                if f.lower().endswith('.png')
+            )
             frames: list[pygame.Surface] = []
-            fps = 30.0
-            cap = _cv2.VideoCapture(path)
-            if cap.isOpened():
-                _r = cap.get(_cv2.CAP_PROP_FPS)
-                if _r > 0:
-                    fps = _r
-                while True:
-                    ret, frm = cap.read()
-                    if not ret:
-                        break
-                    rgb = _cv2.cvtColor(frm, _cv2.COLOR_BGR2RGB)
-                    fh, fw = rgb.shape[:2]
-                    fw_scaled = max(1, int(fw * _bop_target_h / fh))
-                    rgb_small = _cv2.resize(rgb, (fw_scaled, _bop_target_h),
-                                            interpolation=_cv2.INTER_AREA)
-                    frames.append(pygame.surfarray.make_surface(
-                        rgb_small.transpose(1, 0, 2)))
-            cap.release()
-            return frames, fps
+            for p in paths:
+                img = pygame.image.load(p).convert_alpha()
+                iw, ih = img.get_size()
+                tw = max(1, int(iw * _bop_target_h / ih))
+                frames.append(pygame.transform.smoothscale(img, (tw, _bop_target_h)))
+            return frames, 30.0
 
-        _bop_path  = os.path.join(assets_path, "noki_bop.mov")
-        _hurt_path = os.path.join(assets_path, "noki_hurt.mov")
-        self._bop_frames,  self._bop_fps  = _decode_video_frames(_bop_path)
-        self._hurt_frames, self._hurt_fps = _decode_video_frames(_hurt_path)
+        self._bop_frames,  self._bop_fps  = _load_png_seq('noki_bop')
+        self._hurt_frames, self._hurt_fps = _load_png_seq('noki_hurt')
 
         # --- petal spinner loop ---
         _P1 = (60.0 / 45.0) / 0.7
@@ -517,7 +509,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self._in_level_settings: SettingsPanel | None = None
 
         # --- in-level image buttons (leave + settings) ---
-        _btn_w, _btn_h = 104, 104
+        _btn_w, _btn_h = 83, 83
         _btn_margin = 20
         _leave_raw = pygame.image.load(
             os.path.join(assets_path, 'leavebutton.png')
@@ -697,8 +689,8 @@ class Game(EffectsMixin, MechanicsMixin):
         current_time = time.perf_counter() - self.rhythm.start_time
 
         # Snapshot states before updates for transition detection
-        _was_dual_active     = self.dual_side_active
-        _was_bounce_reversed = self.bounce_reversed
+        _was_dual_visuals_active = self.dual_side_visuals_active
+        _was_bounce_reversed     = self.bounce_reversed
 
         self.update_dynamic_scroll_speed(current_time)
         self.update_bounce_state(current_time)
@@ -749,17 +741,20 @@ class Game(EffectsMixin, MechanicsMixin):
         _set_ml(_energy_state)
 
         # --- dual-mode entry: speed_up on hitmarker only
-        if self.dual_side_active and not _was_dual_active:
+        # Use dual_side_visuals_active — it's what actually drives hitmarker movement
+        if self.dual_side_visuals_active and not _was_dual_visuals_active:
             _set_hm('speed_up')
 
         # --- bounce direction change: affect both hitmarker + measureline
+        # going right → left (reversed becomes True): slow_hitmarker (deceleration feel)
+        # going left → right (reversed becomes False): speed_hitmarker (acceleration feel)
         if self.bounce_active:
             if self.bounce_reversed and not _was_bounce_reversed:
-                _set_hm('speed_up')
-                _set_ml('speed_up')
-            elif not self.bounce_reversed and _was_bounce_reversed:
                 _set_hm('slow_down')
                 _set_ml('slow_down')
+            elif not self.bounce_reversed and _was_bounce_reversed:
+                _set_hm('speed_up')
+                _set_ml('speed_up')
 
         # --- advance frame counters (stop at end — no looping)
         self._hitmarker_anim_frame   += (14.0 if self._hitmarker_anim_state   == 'speed_up' else 12.0 if self._hitmarker_anim_state   == 'slow_down' else 0.0) * dt
@@ -789,8 +784,7 @@ class Game(EffectsMixin, MechanicsMixin):
                 mouse_clicked = True
 
         if mouse_clicked and self._leave_rect.collidepoint(mouse_pos):
-            self._enter_pause()
-            return
+            pause_requested = True
         if mouse_clicked and self._level_settings_rect.collidepoint(mouse_pos):
             self._enter_pause()
             self._in_level_settings = SettingsPanel(self.screen, self._music, self._level_settings_rect)
@@ -900,17 +894,17 @@ class Game(EffectsMixin, MechanicsMixin):
                         self.show_message("HOLD...", 0.5)
                     elif judgment == 'perfect':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.12
+                        self._hm_scale = 1.07
                         self.show_message(f"PERFECT! ×{combo}", 0.8)
                         self.trigger_judgment('perfect', int(self.hit_marker_current_x) - 40, 315)
                     elif judgment == 'good':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.12
+                        self._hm_scale = 1.07
                         self.show_message(f"Good ×{combo}", 0.8)
                         self.trigger_judgment('good', int(self.hit_marker_current_x) - 40, 315)
                     elif judgment == 'ok':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.12
+                        self._hm_scale = 1.07
                         self.show_message(f"OK ×{combo}", 0.8)
                         self.trigger_judgment('ok', int(self.hit_marker_current_x) - 40, 315)
 
@@ -937,7 +931,7 @@ class Game(EffectsMixin, MechanicsMixin):
                     if hold_result['hit']:
                         j = hold_result['judgment']
                         combo = hold_result['combo']
-                        self._hm_scale = 1.12
+                        self._hm_scale = 1.07
                         if 'perfect' in j:
                             self.show_message(f"HOLD PERFECT! ×{combo}", 1.0)
                             self.trigger_judgment('perfect', int(self.hit_marker_current_x) - 40, 315)

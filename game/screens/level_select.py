@@ -43,6 +43,10 @@ _ASSETS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "assets", "images",
 )
+_ANIMATIONS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "assets", "animations",
+)
 
 
 class LevelSelect:
@@ -118,7 +122,7 @@ class LevelSelect:
         self._noki_loop_w  = 0
         self._noki_loop_h  = 0
 
-        base_dir   = os.path.join(_ASSETS, "noki_base_loop")
+        base_dir   = os.path.join(_ANIMATIONS, "noki_base_loop")
         avail_h    = loop_bottom - 20
         body_scale: tuple[int, int] | None = None
         if os.path.isdir(base_dir):
@@ -142,10 +146,10 @@ class LevelSelect:
         self._noki_loop_bottom = loop_bottom + int(sh * 0.13)
 
         eye_scale = body_scale
-        self._leye_seq  = PNGSequenceSprite(os.path.join(_ASSETS, "left"),       fps=30.0, scale=eye_scale)
-        self._reye_seq  = PNGSequenceSprite(os.path.join(_ASSETS, "right"),      fps=30.0, scale=eye_scale)
-        self._lick1_seq = PNGSequenceSprite(os.path.join(_ASSETS, "noki_lick1"), fps=30.0, scale=body_scale)
-        self._lick2_seq = PNGSequenceSprite(os.path.join(_ASSETS, "noki_lick2"), fps=30.0, scale=body_scale)
+        self._leye_seq  = PNGSequenceSprite(os.path.join(_ANIMATIONS, "left"),       fps=30.0, scale=eye_scale)
+        self._reye_seq  = PNGSequenceSprite(os.path.join(_ANIMATIONS, "right"),      fps=30.0, scale=eye_scale)
+        self._lick1_seq = PNGSequenceSprite(os.path.join(_ANIMATIONS, "noki_lick1"), fps=30.0, scale=body_scale)
+        self._lick2_seq = PNGSequenceSprite(os.path.join(_ANIMATIONS, "noki_lick2"), fps=30.0, scale=body_scale)
 
         self._lick_playing: bool                   = False
         self._active_lick:  PNGSequenceSprite | None = None

@@ -150,7 +150,7 @@ class TimelineRenderer:
         import math as _math
         _shake_x_off = 0
         if g._hm_shake_t > 0:
-            _shake_x_off = int(_math.sin(g._hm_shake_t * 42) * 5 * g._hm_shake_t)
+            _shake_x_off = int(_math.sin(g._hm_shake_t * 42) * 3 * g._hm_shake_t)
 
         _hm_cx = int(hit_marker_x) + _shake_x_off
         _hm_cy = timeline_y
@@ -339,17 +339,18 @@ class TimelineRenderer:
 
             g.screen.blit(fill_surf, (bar_x, bar_y))
 
-            # Glow behind filled portion
-            glow_expand = 8
-            glow_surf = pygame.Surface((filled_width + glow_expand * 2, bar_height + glow_expand * 2), pygame.SRCALPHA)
-            for i in range(glow_expand, 0, -1):
-                alpha = int(60 * (i / glow_expand))
-                pygame.draw.rect(
-                    glow_surf, (100, 200, 255, alpha),
-                    (glow_expand - i, glow_expand - i, filled_width + i * 2, bar_height + i * 2),
-                    border_radius=border_r + i,
-                )
-            g.screen.blit(glow_surf, (bar_x - glow_expand, bar_y - glow_expand), special_flags=pygame.BLEND_RGBA_ADD)
+            # Soft blur glow behind filled portion (same technique as text glow)
+            _gp = 28
+            _gw = filled_width + _gp * 2
+            _gh = bar_height + _gp * 2
+            glow_base = pygame.Surface((_gw, _gh), pygame.SRCALPHA)
+            pygame.draw.rect(glow_base, (255, 255, 255, 255), (_gp, _gp, filled_width, bar_height), border_radius=border_r)
+            _blurred = glow_base
+            for _ in range(3):
+                _small = pygame.transform.smoothscale(_blurred, (max(1, _gw // 5), max(1, _gh // 5)))
+                _blurred = pygame.transform.smoothscale(_small, (_gw, _gh))
+            _blurred.fill((100, 200, 255, 90), special_flags=pygame.BLEND_RGBA_MULT)
+            g.screen.blit(_blurred, (bar_x - _gp, bar_y - _gp), special_flags=pygame.BLEND_RGBA_ADD)
 
         # White border
         pygame.draw.rect(g.screen, (255, 255, 255), (bar_x, bar_y, bar_width, bar_height), width=3, border_radius=border_r)

@@ -20,6 +20,7 @@ from .menu_utils import (
     _save_word_banks,
     _load_custom_bpms,
     _save_custom_bpms,
+    start_pick_audio_file,
 )
 from .ui_components import Button, Petal
 from .screens import TitleScreen, LevelSelect, LevelMenu, FileUploadScreen
@@ -71,7 +72,7 @@ class MenuManager:
         # ── Intro video ──────────────────────────────────────────────────────
         _VIDEO_PATH = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
-            "assets", "images", "noki_intro.mov",
+            "assets", "animations", "noki_intro.mov",
         )
         self._video_cap        = None
         self._video_done       = (music is not None and music.title_ready)
@@ -88,6 +89,7 @@ class MenuManager:
         self._dots_font     = pygame.font.Font(_FONT, _dots_font_size)
 
         if not self._video_done:
+            _has_video = False
             try:
                 import cv2  # type: ignore
                 if os.path.exists(_VIDEO_PATH):
@@ -100,22 +102,26 @@ class MenuManager:
                         if self._music:
                             self._music.start_intro()
                         self._show_waiting = False
-                    else:
-                        self._video_done = True
-                else:
-                    self._video_done = True
+                        _has_video = True
             except ImportError:
+                pass
+            if not _has_video:
                 self._video_done = True
+                if self._music:
+                    self._music.on_intro_video_done()
 
         # per-song word banks (filename → word list)
         self.song_word_banks: dict[str, list[str]] = _load_word_banks()
 
         self._pending_difficulty: str | None = None
 
-        # async file-copy state (Fix 3)
+        # async file-copy state
         self._uploading: bool = False
         self._upload_thread: threading.Thread | None = None
         self._upload_result: list = []  # filled with (ok, msg) by worker
+
+        # non-blocking file-picker subprocess (launched directly from level select)
+        self._pick_proc = None
 
     def reset_for_return(self, start_state: str) -> None:
         """Lightweight reset after returning from a level — avoids recreating fonts/videos."""
@@ -272,10 +278,31 @@ class MenuManager:
                     elif lm_action == "close":
                         self._level_menu = None
 
+                # Poll file-picker subprocess started by upload button
+                if self._pick_proc is not None and self._pick_proc.poll() is not None:
+                    _picked_path = (self._pick_proc.stdout.read().strip()
+                                    if self._pick_proc.stdout else "")
+                    self._pick_proc = None
+                    if _picked_path:
+                        self._handle_upload(_picked_path, None)
+
+                # Poll async copy thread (started by _handle_upload above)
+                if self._uploading:
+                    if self._upload_thread and not self._upload_thread.is_alive():
+                        self._uploading = False
+                        if self._upload_result:
+                            _ok, _msg = self._upload_result[0]
+                            if _ok:
+                                self.level_select = LevelSelect(
+                                    self.screen, self.song_names,
+                                    self._scores, self._canon_names,
+                                )
+
                 if action == "back":
                     self._start_transition("title", self.level_select.back_button.rect.center)
                 elif action == "upload":
-                    self.state = "upload"
+                    if self._pick_proc is None:  # prevent double-launch
+                        self._pick_proc = start_pick_audio_file()
                 elif action == "cancel_upload":
                     cancel_idx = idx
                     if 0 <= cancel_idx < len(self.song_names):

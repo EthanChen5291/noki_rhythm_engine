@@ -27,6 +27,10 @@ _ASSETS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "assets", "images",
 )
+_ANIMATIONS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "assets", "animations",
+)
 
 
 class TitleScreen:
@@ -104,7 +108,7 @@ class TitleScreen:
         self._bop_cx = sw // 4 + int(sw * 0.06)
         self._bop_cy = btn_bottom - bop_h // 2
 
-        self._video = VideoPlayer(os.path.join(_ASSETS, "noki_bop.mov"), bop_h)
+        self._video = VideoPlayer(os.path.join(_ANIMATIONS, "noki_bop.mov"), bop_h)
 
         # Spotlight overlay (drawn on top of the video at low opacity)
         self._spotlight_surf: pygame.Surface | None = None

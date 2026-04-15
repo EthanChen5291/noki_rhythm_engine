@@ -10,7 +10,7 @@ import re
 
 _FONT = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
-    "assets", "images", "fonts", "tacobae-font", "Tacobae-pge2K.otf",
+    "assets", "fonts", "tacobae-font", "Tacobae-pge2K.otf",
 )
 
 
