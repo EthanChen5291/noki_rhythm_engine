@@ -8,7 +8,24 @@ from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
-# 
+# on last iteration of bounce section, if going in reverse, just take the upcoming notes outside of the section and make them come from the right (so they dont appear on the left corner and teleport)
+
+# different cursor (osu! circle)
+
+# add loading screen after leaving level
+
+# make all sounds effects 50% louder
+
+# ensure that bounce sections cannot exceed the closest musically snapped (bpm) number of measures closest to 16 seconds. moreover 
+# after a bounce section, a bounce section cannot happen '
+# for at least the musically snapped number of measures 
+# around 10 seconds
+
+# how should I ensure hitsound has a good volume given any song?
+
+# when going in reverse and unreversing back to traveling left to right, 
+# the appropriate speed_hitmarker,speed2_hitmarker, slow_hitmarker (and the measureline counterpark) etc doesn't play. it only plays 
+# when reversing from left to right to right to left.
 
 # calculate and record bpm ingame live -> return in finish menu
 
