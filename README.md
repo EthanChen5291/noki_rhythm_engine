@@ -64,6 +64,8 @@
 
 ## 🚀 Quick Start
 
+<img src="assets/images/noki_preview2.png" alt="Noki Preview 2" width="980">
+
 ### Prerequisites
 
 - Python 3.8+
