@@ -302,3 +302,20 @@ def _save_scores(scores: dict) -> None:
             json.dump(scores, f, indent=2)
     except Exception:
         pass
+
+
+# ─── Custom cursor ────────────────────────────────────────────────────────────
+
+import pygame as _pygame
+
+
+def draw_cursor(screen: '_pygame.Surface') -> None:
+    """Draw a white circle cursor at the current mouse position."""
+    mx, my = _pygame.mouse.get_pos()
+    r = 8
+    surf = _pygame.Surface((r * 2 + 2, r * 2 + 2), _pygame.SRCALPHA)
+    # Soft dark outline for visibility against light content
+    _pygame.draw.circle(surf, (30, 30, 30, 140), (r + 1, r + 1), r)
+    # White fill (slightly inset)
+    _pygame.draw.circle(surf, (255, 255, 255, 220), (r + 1, r + 1), r - 1)
+    screen.blit(surf, (mx - r, my - r))

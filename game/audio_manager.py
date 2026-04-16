@@ -34,7 +34,7 @@ def play_click() -> None:
     _click_idx += 1
     s = _load(name)
     if s:
-        s.set_volume(0.65)
+        s.set_volume(0.975)
         s.play()
 
 
@@ -42,7 +42,7 @@ def play_level_click() -> None:
     """Play the level-start click sound."""
     s = _load('levelclick.mp3')
     if s:
-        s.set_volume(0.975)
+        s.set_volume(1.0)
         s.play()
 
 

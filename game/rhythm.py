@@ -145,7 +145,6 @@ class RhythmManager:
         expected_char = current_event.char
 
         if typed_char != expected_char:
-            self._register_miss()
             return {'hit': False, 'judgment': 'wrong', 'time_diff': 0, 'combo': 0}
 
         elapsed = time.perf_counter() - self.start_time

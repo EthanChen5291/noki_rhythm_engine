@@ -470,10 +470,11 @@ class EffectsMixin:
             self._judgment_label = None
             return
 
-        # scale: lerps 0.5 → 1.0 during spin-in (size pop), holds at 1.0 after
+        # scale: starts very small, eases out aggressively to 1.0 during spin-in
         if t < _SPIN_DUR:
             p = t / _SPIN_DUR
-            scale = 0.5 + 0.5 * p
+            ease = 1.0 - (1.0 - p) ** 4  # steep ease-out: fast rise, then settles
+            scale = 0.05 + 0.95 * ease
         else:
             scale = 1.0
 

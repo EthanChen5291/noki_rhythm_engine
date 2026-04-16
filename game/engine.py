@@ -28,7 +28,7 @@ from analysis.audio_analysis import (
 from . import models as M
 from .menu import PauseScreen
 from .screens import SettingsPanel
-from .menu_utils import _FONT
+from .menu_utils import _FONT, draw_cursor
 from .rendering.effects import EffectsMixin
 from .mechanics import MechanicsMixin, BounceEvent
 from .rendering.word_renderer import WordRenderer, build_letter_glow_cache, _make_glow_surface
@@ -179,8 +179,8 @@ class Game(EffectsMixin, MechanicsMixin):
         }
         # Scroll speed threshold above which fast sprites replace static ones,
         # and the max speed used for the stretch ramp (1.0x at threshold → 1.5x at max).
-        self.FAST_NOTE_THRESHOLD: float = 400.0
-        self.FAST_NOTE_MAX_SPEED: float = 700.0
+        self.FAST_NOTE_THRESHOLD: float = 560.0
+        self.FAST_NOTE_MAX_SPEED: float = 900.0
         # Cross-fade alpha: 0.0 = normal sprites, 1.0 = fast sprites (~4 frame transition)
         self._fast_note_alpha: float = 0.0
         _red_frames    = _load_hit_frames('noki_hit_red')
@@ -239,11 +239,12 @@ class Game(EffectsMixin, MechanicsMixin):
 
         _hm_raw = pygame.image.load(os.path.join(assets_path, 'hitmarker.png'))
         _hm_base_size = _hm_raw.get_size()
-        _speed_hm_w = round(_hm_w * 1.08)
+        _speed_hm_w = round(_hm_w * 1.28)
         _speed_hm_h = round(_hm_h * 1.01)
+        _slow_hm_w  = round(_hm_w * 1.22)
         self._speed_hitmarker_frames:  list[pygame.Surface] = _load_seq_frames('speed_hitmarker',  (_speed_hm_w, _speed_hm_h), _hm_base_size)
         self._speed2_hitmarker_frames: list[pygame.Surface] = _load_seq_frames('speed2_hitmarker', (_speed_hm_w, _speed_hm_h), _hm_base_size)
-        self._slow_hitmarker_frames:   list[pygame.Surface] = _load_seq_frames('slow_hitmarker',   (_hm_w, _hm_h), _hm_base_size)
+        self._slow_hitmarker_frames:   list[pygame.Surface] = _load_seq_frames('slow_hitmarker',   (_slow_hm_w, _hm_h), _hm_base_size)
 
         _ml_w, _ml_h = self._measureline_img.get_size()
         _ml_raw = pygame.image.load(os.path.join(assets_path, 'measureline.png'))
@@ -468,6 +469,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self.bounce_active: bool = False
         self.bounce_reversed: bool = False
         self._next_bounce_idx: int = 0
+        self._post_bounce_reversed_until: float = -1.0  # song_time until which post-section notes come from right
         self._build_bounce_events()
         self._apply_bounce_grace_periods()
 
@@ -552,7 +554,7 @@ class Game(EffectsMixin, MechanicsMixin):
         self._hitsound: pygame.mixer.Sound | None = None
         try:
             self._hitsound = pygame.mixer.Sound(_hitsound_path)
-            self._hitsound.set_volume(0.75)
+            self._hitsound.set_volume(1.0)
         except Exception:
             pass
         # scheduled hitsounds: list of perf_counter times at which to fire
@@ -598,6 +600,7 @@ class Game(EffectsMixin, MechanicsMixin):
                 self._update_paused(dt)
             else:
                 self.update(dt)
+            draw_cursor(self.screen)
             pygame.display.flip()
 
         pygame.mixer.music.stop()
@@ -734,8 +737,10 @@ class Game(EffectsMixin, MechanicsMixin):
             _seq.advance(dt)
 
         # Lerp fast-note cross-fade alpha (4 frames at 60fps → step of 15/s)
+        # Disabled entirely on journey/classic (easy/fair) difficulties.
         _fast_step = 15.0 * dt
-        if self.scroll_speed >= self.FAST_NOTE_THRESHOLD:
+        _fast_allowed = self.level.difficulty not in ('journey', 'classic')
+        if _fast_allowed and self.scroll_speed >= self.FAST_NOTE_THRESHOLD:
             self._fast_note_alpha = min(1.0, self._fast_note_alpha + _fast_step)
         else:
             self._fast_note_alpha = max(0.0, self._fast_note_alpha - _fast_step)
@@ -775,17 +780,20 @@ class Game(EffectsMixin, MechanicsMixin):
             _set_hm('speed_up')
 
         # --- bounce direction change: affect both hitmarker + measureline
-        # going right → left (reversed becomes True): slow_hitmarker (deceleration feel)
-        # going left → right (reversed becomes False): speed_hitmarker (acceleration feel)
-        # The slow_down check requires bounce_active to avoid false positives.
-        # The speed_up check is intentionally outside bounce_active so it also fires
-        # when the section ends and bounce_reversed resets to False.
+        # going left → right to right → left (reversed becomes True): slow_hitmarker
+        # going right → left back to left → right (reversed becomes False): speed_hitmarker
+        # Force-reset state+frame directly so the animation always restarts, even when
+        # the energy-shift state has already advanced the frame counter to the same state.
         if self.bounce_active and self.bounce_reversed and not _was_bounce_reversed:
-            _set_hm('slow_down')
-            _set_ml('slow_down')
+            self._hitmarker_anim_state = 'slow_down'
+            self._hitmarker_anim_frame = 0.0
+            self._measureline_anim_state = 'slow_down'
+            self._measureline_anim_frame = 0.0
         elif _was_bounce_reversed and not self.bounce_reversed:
-            _set_hm('speed_up')
-            _set_ml('speed_up')
+            self._hitmarker_anim_state = 'speed_up'
+            self._hitmarker_anim_frame = 0.0
+            self._measureline_anim_state = 'speed_up'
+            self._measureline_anim_frame = 0.0
 
         # --- advance frame counters (stop at end — no looping)
         self._hitmarker_anim_frame   += (14.0 if self._hitmarker_anim_state   in ('speed_up', 'speed_up_mild') else 12.0 if self._hitmarker_anim_state   == 'slow_down' else 0.0) * dt
@@ -931,17 +939,17 @@ class Game(EffectsMixin, MechanicsMixin):
                         self.show_message("HOLD...", 0.5)
                     elif judgment == 'perfect':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.07
+                        self._hm_scale = 1.14
                         self.show_message(f"PERFECT! ×{combo}", 0.8)
                         self.trigger_judgment('perfect', int(self.hit_marker_current_x) - 40, 315)
                     elif judgment == 'good':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.07
+                        self._hm_scale = 1.14
                         self.show_message(f"Good ×{combo}", 0.8)
                         self.trigger_judgment('good', int(self.hit_marker_current_x) - 40, 315)
                     elif judgment == 'ok':
                         self._glow_press_t = 0.0
-                        self._hm_scale = 1.07
+                        self._hm_scale = 1.14
                         self.show_message(f"OK ×{combo}", 0.8)
                         self.trigger_judgment('ok', int(self.hit_marker_current_x) - 40, 315)
 
@@ -950,16 +958,20 @@ class Game(EffectsMixin, MechanicsMixin):
                 else:
                     judgment = result['judgment']
                     if judgment == 'wrong':
+                        # Wrong key — show feedback but keep the note live so the
+                        # player can re-press before the beat window closes.
                         self.show_message("Wrong Key!", 0.8)
+                        self.trigger_hurt()
+                        self._timeline_flash = 1.0
+                        self._timeline_shake_offset = 6.0
+                        # used_current_char intentionally NOT set — allows retry
                     else:
                         self.show_message("Miss!", 0.8)
-                    self.trigger_hurt()
-
-                    self._timeline_flash = 1.0
-                    self._timeline_shake_offset = 6.0
-
-                    self.misses = self.rhythm.miss_count
-                    self.used_current_char = True
+                        self.trigger_hurt()
+                        self._timeline_flash = 1.0
+                        self._timeline_shake_offset = 6.0
+                        self.misses = self.rhythm.miss_count
+                        self.used_current_char = True
 
         if self.input.released_chars:
             for rel_char in self.input.released_chars:
@@ -968,7 +980,7 @@ class Game(EffectsMixin, MechanicsMixin):
                     if hold_result['hit']:
                         j = hold_result['judgment']
                         combo = hold_result['combo']
-                        self._hm_scale = 1.07
+                        self._hm_scale = 1.14
                         if 'perfect' in j:
                             self.show_message(f"HOLD PERFECT! ×{combo}", 1.0)
                             self.trigger_judgment('perfect', int(self.hit_marker_current_x) - 40, 315)

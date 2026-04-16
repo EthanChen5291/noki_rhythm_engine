@@ -56,7 +56,19 @@ class MechanicsMixin:
 
     def _build_bounce_events(self):
         """Build bounce events from energy shifts with positive energy_delta."""
+        # One "block" = 4 measures = 16 beats
+        four_measure_dur = 16.0 * self.beat_duration
+
+        # Max bounce section: musically snapped multiple of 4 measures closest to 20 s
+        n_max = max(1, round(20.0 / four_measure_dur))
+        max_bounce_dur = n_max * four_measure_dur
+
+        # Cooldown after a bounce section: musically snapped multiple of 4 measures closest to 16 s
+        n_cool = max(1, round(16.0 / four_measure_dur))
+        min_gap = n_cool * four_measure_dur
+
         dual_ranges = [(ds.start_time, ds.end_time) for ds in self.dual_side_sections]
+        last_section_end: float = -999.0
 
         for shift in self.energy_shifts:
             if shift.energy_delta <= C.BOUNCE_THRESHOLD:
@@ -70,21 +82,30 @@ class MechanicsMixin:
             if overlaps:
                 continue
 
+            # Enforce cooldown: skip if too close to the previous bounce section end
+            if shift.start_time - last_section_end < min_gap:
+                continue
+
+            # Cap the section length to the musical max
+            capped_end = min(shift.end_time, shift.start_time + max_bounce_dur)
+
             measure_beats = []
             for i, bt in enumerate(self.song.beat_times):
                 if bt < shift.start_time:
                     continue
-                if bt >= shift.end_time:
+                if bt >= capped_end:
                     break
                 if i % 8 == 0:
                     measure_beats.append(bt)
 
-            for bt in measure_beats:
-                self.bounce_events.append(BounceEvent(
-                    time=bt,
-                    section_start=shift.start_time,
-                    section_end=shift.end_time,
-                ))
+            if measure_beats:
+                for bt in measure_beats:
+                    self.bounce_events.append(BounceEvent(
+                        time=bt,
+                        section_start=shift.start_time,
+                        section_end=capped_end,
+                    ))
+                last_section_end = capped_end
 
         self.bounce_events.sort(key=lambda e: e.time)
 
@@ -138,7 +159,13 @@ class MechanicsMixin:
             self._next_bounce_idx += 1
 
         if was_active and not self.bounce_active:
+            if self.bounce_reversed:
+                # Section ended in reversed state — give post-section notes 2 beats
+                # of right-side approach so they don't teleport from the left corner
+                self._post_bounce_reversed_until = song_time + self.beat_duration * 2
             self.bounce_reversed = False
+        if not was_active and self.bounce_active:
+            self._post_bounce_reversed_until = -1.0  # entering a new section; clear
 
     def update_cat_position(self, current_time: float, dt: float):
         """Update cat position with momentum-style animation for dual-side mode."""

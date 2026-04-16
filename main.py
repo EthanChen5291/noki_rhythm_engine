@@ -2,24 +2,58 @@ import os
 os.environ['SDL_MOUSE_FOCUS_CLICKTHROUGH'] = '1'
 
 import pygame
+import time as _time
 from game.engine import Game
 from game.models import Level
 from game.menu import MenuManager
 from game.menu_utils import _load_scores, _save_scores
 from game.music import MusicManager
 
-# on last iteration of bounce section, if going in reverse, just take the upcoming notes outside of the section and make them come from the right (so they dont appear on the left corner and teleport)
 
-# different cursor (osu! circle)
+def _show_loading_screen(screen, clock, duration=0.55):
+    """Brief petal-spinner transition shown when returning to the menu after a level."""
+    from game.ui_components import Petal
+    sw, sh = screen.get_size()
+    petals = [Petal(sw, sh, randomize_y=True) for _ in range(45)]
+    start = _time.perf_counter()
+    while True:
+        elapsed = _time.perf_counter() - start
+        if elapsed >= duration:
+            break
+        clock.tick(60)
+        screen.fill((0, 0, 0))
+        for p in petals:
+            p.update()
+            p.draw(screen)
+        # Fade in for first 0.15s, fade out for last 0.15s
+        if elapsed < 0.15:
+            alpha = int(255 * (elapsed / 0.15))
+        elif elapsed > duration - 0.15:
+            alpha = int(255 * ((duration - elapsed) / 0.15))
+        else:
+            alpha = 255
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 255 - alpha))
+        screen.blit(overlay, (0, 0))
+        pygame.display.flip()
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return
 
 # add loading screen after leaving level
 
-# make all sounds effects 50% louder
+# add loading screen after leaving level
 
-# ensure that bounce sections cannot exceed the closest musically snapped (bpm) number of measures closest to 16 seconds. moreover 
+# make the hitmarker lerp a bit bigger upon note press correctly
+
+# EFFECTS BRAINSTORMING
+
+# REPEAT WORDS
+
+# ensure that bounce sections cannot exceed the closest musically snapped (bpm) number of sections (multiple of 4 measures) closest to 20 seconds. moreover 
 # after a bounce section, a bounce section cannot happen '
-# for at least the musically snapped number of measures 
-# around 10 seconds
+# for at least the musically snapped number of sections 
+# around 16 seconds
 
 # how should I ensure hitsound has a good volume given any song?
 
@@ -147,6 +181,7 @@ WORD_BANK_2 = ["cat", "here", "me", "chosen", "beat", "hope", "soul", "true", "l
 
 def main():
     pygame.init()
+    pygame.mouse.set_visible(False)
     info = pygame.display.Info()
     screen = pygame.display.set_mode((info.current_w, info.current_h), pygame.RESIZABLE)
     pygame.display.set_caption("Key Dash")
@@ -258,6 +293,7 @@ def main():
             if game_result != "replay":
                 break
 
+        _show_loading_screen(screen, clock)
         menu.reset_for_return("level_select")
 
     pygame.quit()

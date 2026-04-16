@@ -11,7 +11,7 @@ import math
 import os
 import pygame
 
-from ..menu_utils import _FONT
+from ..menu_utils import _FONT, draw_cursor
 from ..screens._constants import RANKS, MARQUEE_PX_PER_SEC, MARQUEE_PAUSE_SEC
 from .. import audio_manager
 
@@ -311,6 +311,7 @@ class FinishScreen:
 
             result = self.update(dt, mouse_pos, mouse_clicked)
             self.draw()
+            draw_cursor(self.screen)
             pygame.display.flip()
 
             if result is not None:

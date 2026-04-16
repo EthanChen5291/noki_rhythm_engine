@@ -21,6 +21,7 @@ from .menu_utils import (
     _load_custom_bpms,
     _save_custom_bpms,
     start_pick_audio_file,
+    draw_cursor,
 )
 from .ui_components import Button, Petal
 from .screens import TitleScreen, LevelSelect, LevelMenu, FileUploadScreen
@@ -393,6 +394,7 @@ class MenuManager:
                     if self.state == "title":
                         self.title_screen.reset()
 
+            draw_cursor(self.screen)
             pygame.display.flip()
 
     def _handle_upload(self, file_path, word_bank: list[str] | None):

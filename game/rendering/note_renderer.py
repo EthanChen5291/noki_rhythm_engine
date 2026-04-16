@@ -117,6 +117,12 @@ class NoteRenderer:
                         else:
                             break
                     note_from_left = note_reversed
+                elif (not g.dual_side_active
+                      and g._post_bounce_reversed_until > 0
+                      and event.timestamp - g.rhythm.lead_in <= g._post_bounce_reversed_until):
+                    # Section just ended in reversed state — notes within 2 beats of
+                    # section end approach from the right to avoid teleport glitch
+                    note_from_left = True
 
                 if note_from_left:
                     marker_x = hit_marker_x - (time_until_hit * g.scroll_speed)
